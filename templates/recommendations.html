@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}智能推荐 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    /* ── 页头 ── */
+    .rec-header { margin: 12px 0 32px; }
+    .rec-header h2 { font-size: 2.2rem; font-weight: 800; color: #fff; }
+
+    /* ── 推荐类型 Badge ── */
+    .rec-type-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 16px; border-radius: 20px; font-size: 0.82rem; font-weight: 700;
+        letter-spacing: 0.3px;
+    }
+    .rec-type-cold    { background: rgba(108,117,125,0.2); border: 1px solid rgba(108,117,125,0.4); color: #adb5bd; }
+    .rec-type-content { background: rgba(78,205,196,0.15); border: 1px solid rgba(78,205,196,0.4); color: #4ecdc4; }
+    .rec-type-hybrid  { background: rgba(255,159,67,0.15);  border: 1px solid rgba(255,159,67,0.4);  color: var(--accent-color); }
+
+    /* ── 提示横幅 ── */
+    .rec-notice {
+        background: rgba(255,255,255,0.04);
+        border: 1px dashed rgba(255,255,255,0.12);
+        border-radius: 14px; padding: 14px 20px;
+        font-size: 0.88rem; color: rgba(255,255,255,0.5);
+        margin-bottom: 28px;
+    }
+    .rec-notice a { color: var(--accent-color); }
+
+    /* ── 电影卡片 ── */
+    .rec-card {
+        border-radius: 18px; overflow: hidden;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.35s cubic-bezier(0.165,0.84,0.44,1);
+        height: 100%;
+        display: flex; flex-direction: column;
+    }
+    .rec-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        border-color: rgba(255,159,67,0.3);
+    }
+    .rec-card .poster-wrap { position: relative; overflow: hidden; }
+    .rec-card img { width: 100%; height: 320px; object-fit: cover; display: block; transition: transform 0.5s; }
+    .rec-card:hover img { transform: scale(1.06); }
+
+    /* AI 推荐标签 */
+    .ai-tag {
+        position: absolute; top: 10px; right: 10px;
+        background: linear-gradient(45deg, #ff9f43, #ff6b6b);
+        color: #000; font-size: 0.7rem; font-weight: 700;
+        padding: 4px 10px; border-radius: 20px;
+    }
+
+    /* 置信度条 */
+    .confidence-bar-wrap {
+        padding: 10px 14px 4px;
+    }
+    .confidence-label {
+        display: flex; justify-content: space-between;
+        font-size: 0.74rem; color: rgba(255,255,255,0.45); margin-bottom: 5px;
+    }
+    .confidence-bar {
+        height: 4px; border-radius: 2px;
+        background: rgba(255,255,255,0.08); overflow: hidden;
+    }
+    .confidence-fill {
+        height: 100%; border-radius: 2px;
+        background: linear-gradient(90deg, #ff9f43, #ff6b6b);
+        transition: width 0.6s ease;
+        width: 0%;
+    }
+
+    .rec-card-info { padding: 10px 14px 14px; flex: 1; display: flex; flex-direction: column; }
+    .rec-card-title { font-size: 0.92rem; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+    .rec-card-meta  { font-size: 0.75rem; color: rgba(255,255,255,0.4); margin-bottom: 12px; flex: 1; }
+    .rec-detail-btn {
+        display: block; text-align: center; padding: 8px;
+        border-radius: 8px; background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.7); text-decoration: none;
+        font-size: 0.8rem; font-weight: 600; transition: all 0.2s;
+    }
+    .rec-detail-btn:hover { background: rgba(255,159,67,0.15); border-color: rgba(255,159,67,0.35); color: var(--accent-color); }
+
+    /* ── 空状态 ── */
+    .empty-state { text-align: center; padding: 80px 20px; }
+    .empty-state-icon {
+        width: 90px; height: 90px; border-radius: 50%;
+        background: rgba(255,255,255,0.04);
+        border: 2px dashed rgba(255,255,255,0.1);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 24px; font-size: 2rem; color: rgba(255,255,255,0.2);
+    }
+
+    /* ── 刷新按钮 ── */
+    .btn-refresh {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.12);
+        color: rgba(255,255,255,0.7); border-radius: 20px;
+        padding: 7px 20px; font-size: 0.85rem; font-weight: 600;
+        cursor: pointer; transition: all 0.2s; text-decoration: none;
+    }
+    .btn-refresh:hover { background: rgba(255,159,67,0.12); border-color: rgba(255,159,67,0.3); color: var(--accent-color); }
+</style>
+
+<!-- 页头 -->
+<div class="rec-header text-center">
+    <h2><i class="fas fa-magic me-3" style="color: var(--accent-color);"></i>为你推荐的电影</h2>
+    <p class="text-muted lead mx-auto" style="max-width: 650px; font-size: 1rem; line-height: 1.7;">
+        基于你的评分历史与电影内容语义，深度学习模型在数千部影片中为你精准定位。
+    </p>
+
+    <!-- 推荐类型标签 + 刷新 -->
+    <div class="d-flex align-items-center justify-content-center gap-3 mt-3 flex-wrap">
+        {% if rec_type == 'hybrid' %}
+        <span class="rec-type-badge rec-type-hybrid"><i class="fas fa-dna me-1"></i>混合推荐 · 内容 + NCF 协同</span>
+        {% elif rec_type == 'content' %}
+        <span class="rec-type-badge rec-type-content"><i class="fas fa-brain me-1"></i>内容推荐 · 语义相似度</span>
+        {% else %}
+        <span class="rec-type-badge rec-type-cold"><i class="fas fa-fire me-1"></i>热门推荐 · 等待更多评分</span>
+        {% endif %}
+
+        <a href="{{ url_for('recommendations') }}" class="btn-refresh">
+            <i class="fas fa-sync-alt me-1"></i>刷新推荐
+        </a>
+    </div>
+</div>
+
+<!-- 提示横幅 -->
+{% if not emb_ready %}
+<div class="rec-notice">
+    <i class="fas fa-info-circle me-2" style="color: var(--accent-color);"></i>
+    内容向量尚未构建，当前使用热门推荐。运行
+    <code style="color: var(--accent-color);">flask build-embeddings</code>
+    后即可启用基于 BERT 语义的个性化推荐。
+</div>
+{% elif rec_type == 'cold' %}
+<div class="rec-notice">
+    <i class="fas fa-star-half-alt me-2" style="color: var(--accent-color);"></i>
+    你还没有给电影打分，目前展示热门推荐。去
+    <a href="{{ url_for('movies') }}">浏览电影库</a>
+    打分后，推荐将变得个性化！（当前 {{ rating_count }} 条评分记录）
+</div>
+{% elif rec_type == 'content' %}
+<div class="rec-notice">
+    <i class="fas fa-lightbulb me-2" style="color: #4ecdc4;"></i>
+    基于你的 {{ rating_count }} 条高分记录，通过 BERT 语义向量计算相似电影。评分越多，个性化程度越高！
+</div>
+{% else %}
+    <div class="rec-notice" style="border-color: rgba(255,159,67,0.2);">
+        <i class="fas fa-dna me-2" style="color: var(--accent-color);"></i>
+        混合推荐模式：融合了内容语义相似度与 NCF 协同过滤，基于你的 {{ rating_count }} 条评分记录持续优化。
+    </div>
+{% endif %}
+
+<!-- 推荐卡片网格 -->
+{% if rec_pairs %}
+<div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-5">
+    {% for movie, confidence in rec_pairs %}
+    <div class="col">
+        <div class="rec-card">
+            <div class="poster-wrap">
+                <img src="{{ movie.poster_url }}" alt="{{ movie.title }}" loading="lazy">
+                <div class="ai-tag"><i class="fas fa-magic me-1"></i>智能推荐</div>
+            </div>
+
+            <!-- 置信度进度条 -->
+            <div class="confidence-bar-wrap">
+                <div class="confidence-label">
+                    <span>推荐置信度</span>
+                    <span>{{ "%.0f"|format((confidence or 0) * 100) }}%</span>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" data-width="{{ '%.1f'|format((confidence or 0) * 100) }}"></div>
+                </div>
+            </div>
+
+            <div class="rec-card-info">
+                <div class="rec-card-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                <div class="rec-card-meta">
+                    <i class="fas fa-tag me-1"></i>{{ movie.genre or '未知' }}
+                    <span class="ms-2"><i class="fas fa-calendar-alt me-1"></i>{{ movie.release_year or '—' }}</span>
+                </div>
+                <a href="{{ url_for('movie_detail', movie_id=movie.id) }}" class="rec-detail-btn">
+                    <i class="fas fa-play-circle me-1"></i>查看详情
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<!-- 空状态 -->
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="fas fa-film"></i></div>
+    <h4 class="text-white mb-2">暂无推荐结果</h4>
+    <p class="text-muted mb-5">数据库中还没有电影，或推荐引擎正在初始化中。</p>
+    <a href="{{ url_for('movies') }}" class="btn btn-primary rounded-pill px-5 py-2">
+        <i class="fas fa-film me-2"></i>浏览电影库
+    </a>
+</div>
+{% endif %}
+
+<script>
+    document.querySelectorAll('.confidence-fill[data-width]').forEach(function(el) {
+        el.style.width = el.getAttribute('data-width') + '%';
+    });
+</script>
+
+{% endblock %}

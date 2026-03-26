@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}电影推荐系统{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <style>
+        :root {
+            --primary-bg: #0f0c29; /* 深靛蓝渐变起点 */
+            --secondary-bg: #302b63; /* 深靛蓝渐变中点 */
+            --dark-bg: #24243e; /* 深靛蓝渐变终点 */
+            --accent-color: #ff9f43; /* 暖橙色 - 主色 */
+            --card-bg: rgba(255, 255, 255, 0.08); /* 浅深色卡片 */
+            --text-main: #ffffff;
+            --text-muted: #cccccc;
+            --glass-bg: rgba(15, 12, 41, 0.7);
+        }
+        
+        body { 
+            padding-top: 80px; 
+            background: linear-gradient(135deg, var(--primary-bg), var(--secondary-bg), var(--dark-bg));
+            background-attachment: fixed;
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        a:not(.btn):not(.page-link) {
+            color: #8ecbff;
+        }
+
+        a:not(.btn):not(.page-link):hover {
+            color: #b7ddff;
+        }
+
+        .text-muted,
+        .text-body-secondary {
+            color: var(--text-muted) !important;
+        }
+
+        .card,
+        .card-title,
+        .card-text,
+        .card-body,
+        .card-header,
+        .card-footer,
+        .form-label,
+        .form-check-label,
+        .modal-title,
+        .modal-body,
+        .modal-footer,
+        .list-group-item {
+            color: var(--text-main);
+        }
+
+        .form-control,
+        .form-select,
+        .input-group-text,
+        textarea {
+            background: rgba(0, 0, 0, 0.3) !important;
+            border-color: rgba(255, 255, 255, 0.12) !important;
+            color: var(--text-main) !important;
+        }
+
+        .form-control:focus,
+        .form-select:focus,
+        textarea:focus {
+            background: rgba(0, 0, 0, 0.38) !important;
+            color: var(--text-main) !important;
+            border-color: rgba(255, 159, 67, 0.6) !important;
+            box-shadow: 0 0 0 0.25rem rgba(255, 159, 67, 0.2);
+        }
+
+        .form-control::placeholder,
+        textarea::placeholder {
+            color: rgba(255, 255, 255, 0.65) !important;
+        }
+
+        .form-select option {
+            background: var(--dark-bg);
+            color: var(--text-main);
+        }
+
+        .page-link {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.12);
+            color: var(--text-main);
+        }
+
+        .page-link:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.16);
+            color: var(--accent-color);
+        }
+
+        .page-item.active .page-link {
+            background: var(--accent-color);
+            border-color: var(--accent-color);
+            color: #000;
+        }
+
+        .page-item.disabled .page-link {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.35);
+        }
+        
+        /* 导航栏磨砂玻璃效果 */
+        .navbar {
+            background: var(--glass-bg) !important;
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            height: 80px;
+            transition: all 0.3s ease;
+        }
+        
+        .navbar-brand {
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: var(--accent-color) !important;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .nav-link {
+            color: var(--text-main) !important;
+            font-weight: 500;
+            margin: 0 10px;
+            position: relative;
+            transition: color 0.3s ease;
+        }
+        
+        .nav-link:after {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 2px;
+            bottom: -5px;
+            left: 0;
+            background-color: var(--accent-color);
+            transition: width 0.3s ease;
+        }
+        
+        .nav-link:hover:after {
+            width: 100%;
+        }
+        
+        .nav-link:hover {
+            color: var(--accent-color) !important;
+        }
+
+        /* 通用卡片样式 */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+        }
+
+        /* 按钮样式 */
+        .btn-primary {
+            background-color: var(--accent-color);
+            border: none;
+            color: #000;
+            font-weight: 700;
+            border-radius: 30px;
+            padding: 10px 25px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            background-color: #ffb167;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 159, 67, 0.4);
+            color: #000;
+        }
+
+        /* AI 推荐标签 */
+        .ai-badge {
+            background: linear-gradient(45deg, #ff9f43, #ff6b6b);
+            color: white;
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+            box-shadow: 0 4px 10px rgba(255, 159, 67, 0.3);
+        }
+
+        /* 电影海报悬停缩放 */
+        .movie-card {
+            cursor: pointer;
+            overflow: hidden;
+        }
+        
+        .movie-card img {
+            transition: transform 0.5s ease;
+        }
+        
+        .movie-card:hover img {
+            transform: scale(1.1);
+        }
+        
+        .movie-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            border-color: rgba(255, 159, 67, 0.3);
+        }
+
+        /* AI 助手弹窗优化 */
+        .ai-assistant-btn { 
+            position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; 
+            border-radius: 50%; background: var(--accent-color); 
+            color: #000; display: flex; align-items: center; justify-content: center; 
+            font-size: 24px; cursor: pointer; box-shadow: 0 10px 25px rgba(255, 159, 67, 0.4); 
+            z-index: 1000; transition: all 0.3s ease;
+        }
+
+        .ai-assistant-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 15px 35px rgba(255, 159, 67, 0.6);
+        }
+        
+        .ai-popup { 
+            position: fixed; bottom: 105px; right: 30px; width: 360px;
+            background: #1a1a2e;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.9); 
+            display: none; flex-direction: column; z-index: 1000; overflow: hidden; 
+        }
+        
+        .ai-header { 
+            background: linear-gradient(135deg, rgba(255,159,67,0.15), rgba(255,107,107,0.1));
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .ai-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-height: 320px;
+            max-height: 320px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,159,67,0.3) transparent;
+        }
+
+        .ai-message {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 0.88rem;
+            line-height: 1.55;
+            word-break: break-word;
+        }
+
+        .ai-message.bot {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #e0e0e0;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .ai-message.user {
+            background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+            color: #000;
+            font-weight: 600;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai-footer {
+            padding: 12px 14px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: rgba(0,0,0,0.2);
+        }
+
+        .ai-input {
+            flex: 1;
+            background: rgba(255,255,255,0.07) !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
+            border-radius: 25px !important;
+            color: #fff !important;
+            padding: 9px 16px;
+            font-size: 0.88rem;
+            outline: none;
+        }
+
+        .ai-input:focus {
+            border-color: rgba(255,159,67,0.5) !important;
+            background: rgba(255,255,255,0.1) !important;
+        }
+
+        .ai-input::placeholder {
+            color: rgba(255,255,255,0.4) !important;
+        }
+
+        .ai-send {
+            width: 38px; height: 38px;
+            border-radius: 50%;
+            background: var(--accent-color);
+            border: none;
+            color: #000;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .ai-send:hover {
+            background: #ffb167;
+            transform: scale(1.08);
+        }
+
+        .ai-typing {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            padding: 8px 14px;
+        }
+
+        .ai-typing span {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: rgba(255,159,67,0.6);
+            animation: aiDot 1.2s infinite;
+        }
+
+        .ai-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .ai-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes aiDot {
+            0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 星星评分高亮 */
+        .star-rating {
+            color: var(--accent-color);
+            font-size: 1.2rem;
+        }
+
+        /* 简洁页脚 */
+        footer {
+            margin-top: auto;
+            padding: 30px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(0, 0, 0, 0.2);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--primary-bg); }
+        ::-webkit-scrollbar-thumb { background: var(--secondary-bg); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-color); }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-film"></i>
+                <span>光影推荐</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav mx-auto">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('movies') }}">电影库</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('recommendations') }}">智能推荐</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('visualize') }}">数据洞察</a></li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav ms-auto align-items-center">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link d-flex align-items-center" href="{{ url_for('profile') }}">
+                                <img src="https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=32" class="rounded-circle me-2" alt="Avatar">
+                                {{ current_user.username }}
+                            </a>
+                        </li>
+                        <li class="nav-item"><a class="nav-link text-danger" href="{{ url_for('logout') }}"><i class="fas fa-power-off"></i></a></li>
+                    {% else %}
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('login') }}">登录</a></li>
+                        <li class="nav-item"><a class="btn btn-primary btn-sm ms-lg-3" href="{{ url_for('register') }}">立即加入</a></li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container mt-4 mb-5 flex-grow-1">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show border-0 rounded-pill px-4 shadow-sm" style="background: rgba(255,255,255,0.1); color: #fff;">
+                        {{ message }}
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p class="mb-1">&copy; 2026 光影推荐 - 基于深度学习的个性化电影发现平台</p>
+            <div class="d-flex justify-content-center gap-3 mt-2">
+                <small>TMDB 数据支持</small>
+                <small>PyTorch 算法驱动</small>
+            </div>
+        </div>
+    </footer>
+
+    {% if current_user.is_authenticated %}
+    <!-- AI Assistant Component -->
+    <div class="ai-assistant-btn" id="aiBtn" onclick="toggleAI()">
+        <i class="fas fa-robot"></i>
+    </div>
+    <div class="ai-popup" id="aiPopup">
+        <div class="ai-header">
+            <span><i class="fas fa-robot me-2"></i>智能小助手</span>
+            <button class="btn-close btn-close-white" style="font-size: 12px;" onclick="toggleAI()"></button>
+        </div>
+        <div class="ai-body" id="aiBody">
+            <div class="ai-message bot">您好，我是您的AI电影推荐助手，有什么可以帮您？</div>
+        </div>
+        <div class="ai-footer">
+            <input type="text" class="ai-input" id="aiInput" placeholder="请输入问题..." onkeypress="handleAIKeyPress(event)">
+            <button class="ai-send" onclick="sendAIMessage()"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Bootstrap Bundle with Popper -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+
+    <script>
+        // AI Assistant Logic
+        function toggleAI() {
+            const popup = document.getElementById('aiPopup');
+            if (popup.style.display === 'none' || popup.style.display === '') {
+                popup.style.display = 'flex';
+            } else {
+                popup.style.display = 'none';
+            }
+        }
+
+        function handleAIKeyPress(e) {
+            if (e.key === 'Enter') sendAIMessage();
+        }
+
+        function sendAIMessage() {
+            const input = document.getElementById('aiInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            const body = document.getElementById('aiBody');
+            body.innerHTML += `<div class="ai-message user">${msg}</div>`;
+            input.value = '';
+            body.scrollTop = body.scrollHeight;
+
+            // 打字动效
+            const typingId = 'typing-' + Date.now();
+            body.innerHTML += `<div class="ai-message bot ai-typing" id="${typingId}"><span></span><span></span><span></span></div>`;
+            body.scrollTop = body.scrollHeight;
+
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const typing = document.getElementById(typingId);
+                if (typing) typing.remove();
+                body.innerHTML += `<div class="ai-message bot">${data.reply}</div>`;
+                body.scrollTop = body.scrollHeight;
+            })
+            .catch(() => {
+                const typing = document.getElementById(typingId);
+                if (typing) typing.remove();
+                body.innerHTML += `<div class="ai-message bot" style="color:#ff6b6b;">系统异常，请稍后再试。</div>`;
+            });
+        }
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

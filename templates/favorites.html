@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}我的收藏 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    .page-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 32px;
+        margin-top: 8px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .page-header-bar h2 {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #fff;
+        margin: 0;
+    }
+
+    .fav-count-badge {
+        background: rgba(255,159,67,0.15);
+        border: 1px solid rgba(255,159,67,0.3);
+        color: var(--accent-color);
+        font-weight: 700;
+        font-size: 0.85rem;
+        padding: 5px 14px;
+        border-radius: 20px;
+    }
+
+    .fav-card {
+        border-radius: 18px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+        position: relative;
+    }
+
+    .fav-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 45px rgba(0,0,0,0.55);
+        border-color: rgba(255,159,67,0.25);
+    }
+
+    .fav-card-img {
+        width: 100%;
+        height: 320px;
+        object-fit: cover;
+        display: block;
+        transition: transform 0.5s ease;
+    }
+
+    .fav-card:hover .fav-card-img {
+        transform: scale(1.05);
+    }
+
+    .fav-remove-btn {
+        position: absolute;
+        top: 10px; right: 10px;
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        background: rgba(220,53,69,0.85);
+        border: none;
+        color: #fff;
+        font-size: 0.75rem;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        opacity: 0;
+        transition: all 0.2s;
+        z-index: 10;
+        backdrop-filter: blur(4px);
+    }
+
+    .fav-card:hover .fav-remove-btn {
+        opacity: 1;
+    }
+
+    .fav-remove-btn:hover {
+        background: #dc3545;
+        transform: scale(1.12);
+    }
+
+    .fav-card-info {
+        padding: 14px 16px;
+    }
+
+    .fav-card-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 10px;
+    }
+
+    .fav-detail-btn {
+        display: block;
+        text-align: center;
+        padding: 8px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.75);
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .fav-detail-btn:hover {
+        background: rgba(255,159,67,0.15);
+        border-color: rgba(255,159,67,0.35);
+        color: var(--accent-color);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+    }
+
+    .empty-state-icon {
+        width: 90px; height: 90px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.04);
+        border: 2px dashed rgba(255,255,255,0.1);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 24px;
+        font-size: 2rem;
+        color: rgba(255,255,255,0.25);
+    }
+</style>
+
+<div class="page-header-bar">
+    <h2><i class="fas fa-heart me-3" style="color: #ff6b6b;"></i>我的收藏库</h2>
+    <span class="fav-count-badge" id="favTotalCount">{{ movies|length }} 部影片</span>
+</div>
+
+{% if movies %}
+<div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3" id="favGrid">
+    {% for movie in movies %}
+    <div class="col" id="fav-card-{{ movie.id }}">
+        <div class="fav-card">
+            <button class="fav-remove-btn" onclick="removeFav('{{ movie.id }}')" title="取消收藏">
+                <i class="fas fa-times"></i>
+            </button>
+            <img src="{{ movie.poster_url }}" class="fav-card-img" alt="{{ movie.title }}">
+            <div class="fav-card-info">
+                <div class="fav-card-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                <a href="{{ url_for('movie_detail', movie_id=movie.id) }}" class="fav-detail-btn">
+                    <i class="fas fa-play-circle me-1"></i>查看详情
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="far fa-folder-open"></i></div>
+    <h4 class="text-white mb-2">收藏夹还是空的</h4>
+    <p class="text-muted mb-5">快去发现触动你的光影故事，然后收藏它们吧</p>
+    <a href="{{ url_for('movies') }}" class="btn btn-primary rounded-pill px-5 py-2">
+        <i class="fas fa-film me-2"></i>浏览电影
+    </a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function removeFav(movieId) {
+    if (!confirm('确定要取消收藏该电影吗？')) return;
+    fetch(`/toggle_favorite/${movieId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'removed') {
+            const card = document.getElementById(`fav-card-${movieId}`);
+            card.style.transition = 'all 0.3s ease';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.9)';
+            setTimeout(() => {
+                card.remove();
+                const remaining = document.querySelectorAll('#favGrid .col');
+                document.getElementById('favTotalCount').textContent = remaining.length + ' 部影片';
+                if (remaining.length === 0) location.reload();
+            }, 300);
+        }
+    });
+}
+</script>
+{% endblock %}

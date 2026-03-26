@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}个人中心 - 光影推荐{% endblock %}
+{% block content %}
+<div class="row mt-4 mb-4">
+    <div class="col-12 text-center">
+        <h2 class="mb-0 fw-bold text-white"><i class="fas fa-user-circle me-2" style="color: var(--accent-color);"></i>个人中心</h2>
+        <p class="text-muted mt-2">完善您的特征信息，让深度学习模型更懂您</p>
+    </div>
+</div>
+
+<div class="row g-4 justify-content-center">
+    <!-- 左侧信息卡片 -->
+    <div class="col-md-4">
+        <div class="card shadow-lg text-center p-4 border-0 h-100" style="background: rgba(255,255,255,0.03); border-radius: 20px;">
+            <div class="mb-4 position-relative d-inline-block mx-auto">
+                <img src="https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=150" class="rounded-circle shadow-lg border border-3 border-dark" alt="Avatar">
+                <span class="position-absolute bottom-0 end-0 bg-success border border-dark rounded-circle" style="width: 20px; height: 20px;"></span>
+            </div>
+            <h3 class="text-white fw-bold mb-1">{{ current_user.username }}</h3>
+            <p class="text-muted mb-4"><i class="fas fa-calendar-alt me-2"></i>加入时间：{{ current_user.created_at.strftime('%Y-%m-%d') }}</p>
+            
+            <div class="d-grid gap-3 mt-auto">
+                <a href="{{ url_for('favorites') }}" class="btn btn-outline-light rounded-pill py-2">
+                    <i class="fas fa-heart me-2 text-danger"></i>我的收藏
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 右侧编辑卡片 -->
+    <div class="col-md-8">
+        <div class="card shadow-lg border-0 h-100" style="background: rgba(255,255,255,0.03); border-radius: 20px;">
+            <div class="card-header border-bottom border-secondary bg-transparent py-4 px-5">
+                <h5 class="mb-0 text-light fw-bold"><i class="fas fa-sliders-h me-2" style="color: var(--accent-color);"></i>特征配置模型</h5>
+            </div>
+            <div class="card-body p-5">
+                <form method="POST">
+                    <div class="mb-4 row align-items-center">
+                        <label class="col-sm-3 col-form-label text-md-end text-light fw-bold">用户名</label>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control bg-dark text-light border-secondary rounded-pill px-4 py-2" value="{{ current_user.username }}" disabled style="opacity: 0.7;">
+                        </div>
+                    </div>
+                    <div class="mb-4 row align-items-center">
+                        <label class="col-sm-3 col-form-label text-md-end text-light fw-bold">电子邮箱</label>
+                        <div class="col-sm-9">
+                            <input type="email" name="email" class="form-control bg-dark text-light border-secondary rounded-pill px-4 py-2" value="{{ current_user.email or '' }}" placeholder="请输入您的电子邮箱">
+                        </div>
+                    </div>
+                    <div class="mb-4 row align-items-center">
+                        <label class="col-sm-3 col-form-label text-md-end text-light fw-bold">年龄 <i class="fas fa-info-circle text-warning ms-1" title="重要推荐特征"></i></label>
+                        <div class="col-sm-9">
+                            <input type="number" name="age" class="form-control bg-dark text-light border-secondary rounded-pill px-4 py-2" value="{{ current_user.age or '' }}" min="1" max="120" placeholder="用于提升深度学习推荐准确度">
+                        </div>
+                    </div>
+                    <div class="mb-5 row align-items-center">
+                        <label class="col-sm-3 col-form-label text-md-end text-light fw-bold">性别 <i class="fas fa-info-circle text-warning ms-1" title="重要推荐特征"></i></label>
+                        <div class="col-sm-9">
+                            <select name="gender" class="form-select bg-dark text-light border-secondary rounded-pill px-4 py-2">
+                                <option value="" {% if not current_user.gender %}selected{% endif %}>保密</option>
+                                <option value="Male" {% if current_user.gender == 'Male' %}selected{% endif %}>男</option>
+                                <option value="Female" {% if current_user.gender == 'Female' %}selected{% endif %}>女</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-sm-9 offset-sm-3">
+                            <button type="submit" class="btn btn-warning rounded-pill px-5 py-2 fw-bold text-dark shadow">
+                                <i class="fas fa-save me-2"></i>保存特征配置
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

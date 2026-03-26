@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+{% block title %}电影库 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    .movies-search-bar {
+        position: relative;
+        max-width: 620px;
+        margin: 16px auto 28px;
+    }
+
+    .movies-search-bar .search-icon {
+        position: absolute;
+        left: 20px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(255,255,255,0.35);
+        font-size: 1rem;
+        pointer-events: none;
+        z-index: 5;
+    }
+
+    .movies-search-bar input[type="search"] {
+        width: 100%;
+        background: rgba(255,255,255,0.06) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 50px !important;
+        color: #fff !important;
+        padding: 13px 130px 13px 52px;
+        font-size: 1rem;
+        transition: all 0.25s;
+    }
+
+    .movies-search-bar input[type="search"]:focus {
+        background: rgba(255,255,255,0.09) !important;
+        border-color: rgba(255,159,67,0.5) !important;
+        box-shadow: 0 0 0 4px rgba(255,159,67,0.1) !important;
+        outline: none;
+    }
+
+    .movies-search-bar input[type="search"]::placeholder {
+        color: rgba(255,255,255,0.28) !important;
+    }
+
+    .search-submit-btn {
+        position: absolute;
+        right: 6px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+        border: none;
+        border-radius: 40px;
+        padding: 9px 22px;
+        color: #000;
+        font-weight: 700;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .search-submit-btn:hover {
+        filter: brightness(1.1);
+        transform: translateY(-50%) scale(1.03);
+    }
+
+    /* 类型筛选 */
+    .genre-pills {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 32px;
+    }
+
+    .genre-pill {
+        padding: 6px 18px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.2s;
+        border: 1px solid rgba(255,255,255,0.12);
+        color: rgba(255,255,255,0.65);
+        background: rgba(255,255,255,0.05);
+    }
+
+    .genre-pill:hover {
+        background: rgba(255,159,67,0.15);
+        border-color: rgba(255,159,67,0.4);
+        color: var(--accent-color);
+        transform: translateY(-1px);
+    }
+
+    .genre-pill.active {
+        background: var(--accent-color);
+        border-color: var(--accent-color);
+        color: #000;
+        box-shadow: 0 4px 12px rgba(255,159,67,0.35);
+    }
+
+    /* 电影卡片 */
+    .movie-grid-card {
+        border-radius: 16px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+        cursor: pointer;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .movie-grid-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        border-color: rgba(255,159,67,0.25);
+    }
+
+    .movie-grid-card .poster-wrap {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .movie-grid-card img {
+        width: 100%;
+        height: 300px;
+        object-fit: cover;
+        display: block;
+        transition: transform 0.5s ease;
+    }
+
+    .movie-grid-card:hover img {
+        transform: scale(1.06);
+    }
+
+    .movie-rating-badge {
+        position: absolute;
+        top: 10px; left: 10px;
+        background: rgba(0,0,0,0.7);
+        border: 1px solid rgba(255,193,7,0.4);
+        color: #ffc107;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 4px 9px;
+        border-radius: 20px;
+        backdrop-filter: blur(4px);
+    }
+
+    .movie-year-badge {
+        position: absolute;
+        top: 10px; right: 10px;
+        background: rgba(0,0,0,0.65);
+        color: rgba(255,255,255,0.7);
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 4px 9px;
+        border-radius: 20px;
+        backdrop-filter: blur(4px);
+    }
+
+    .movie-grid-info {
+        padding: 14px 15px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .movie-grid-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 6px;
+    }
+
+    .movie-grid-genre {
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.4);
+        margin-bottom: 12px;
+        flex: 1;
+    }
+
+    .movie-grid-btn {
+        display: block;
+        text-align: center;
+        padding: 8px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.7);
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .movie-grid-btn:hover {
+        background: rgba(255,159,67,0.15);
+        border-color: rgba(255,159,67,0.35);
+        color: var(--accent-color);
+    }
+
+    /* 空状态 */
+    .empty-search {
+        text-align: center;
+        padding: 80px 20px;
+        color: rgba(255,255,255,0.4);
+    }
+
+    .empty-search i {
+        font-size: 3.5rem;
+        margin-bottom: 20px;
+        opacity: 0.3;
+        display: block;
+    }
+
+    /* 分页 */
+    .pagination .page-link {
+        border-radius: 8px !important;
+        margin: 0 2px;
+    }
+</style>
+
+<!-- 搜索栏 -->
+<div class="movies-search-bar">
+    <form method="GET" action="{{ url_for('movies') }}">
+        <i class="fas fa-search search-icon"></i>
+        <input type="search" name="q" value="{{ search_query }}" placeholder="搜索电影名称..." autocomplete="off">
+        {% if current_genre %}<input type="hidden" name="genre" value="{{ current_genre }}">{% endif %}
+        <button type="submit" class="search-submit-btn"><i class="fas fa-search me-1"></i>搜索</button>
+    </form>
+</div>
+
+<!-- 类型筛选 -->
+<div class="genre-pills">
+    <a href="{{ url_for('movies', q=search_query) }}" class="genre-pill {% if not current_genre %}active{% endif %}">全部</a>
+    {% for genre in all_genres %}
+        <a href="{{ url_for('movies', genre=genre, q=search_query) }}" class="genre-pill {% if current_genre == genre %}active{% endif %}">{{ genre }}</a>
+    {% endfor %}
+</div>
+
+<!-- 电影网格 -->
+<div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3">
+    {% for movie in movies %}
+    <div class="col">
+        <div class="movie-grid-card">
+            <div class="poster-wrap">
+                <img src="{{ movie.poster_url }}" alt="{{ movie.title }}" loading="lazy">
+                <div class="movie-rating-badge"><i class="fas fa-star me-1"></i>{{ movie.rating }}</div>
+                <div class="movie-year-badge">{{ movie.release_year }}</div>
+            </div>
+            <div class="movie-grid-info">
+                <div class="movie-grid-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                <div class="movie-grid-genre"><i class="fas fa-tag me-1"></i>{{ movie.genre }}</div>
+                <a href="{{ url_for('movie_detail', movie_id=movie.id) }}" class="movie-grid-btn">
+                    <i class="fas fa-play-circle me-1"></i>查看详情
+                </a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="empty-search">
+            <i class="fas fa-film"></i>
+            <h5 class="text-white">没有找到相关电影</h5>
+            <p>换个关键词或流派试试吧</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 分页 -->
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="分页导航" class="mt-5">
+    <ul class="pagination justify-content-center gap-1">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('movies', page=pagination.prev_num, q=search_query, genre=current_genre) }}">
+                <i class="fas fa-chevron-left"></i>
+            </a>
+        </li>
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('movies', page=page_num, q=search_query, genre=current_genre) }}">{{ page_num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('movies', page=pagination.next_num, q=search_query, genre=current_genre) }}">
+                <i class="fas fa-chevron-right"></i>
+            </a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

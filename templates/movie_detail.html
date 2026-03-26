@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}{{ movie.title }} - 电影详情{% endblock %}
+{% block content %}
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="position-relative" style="border-radius: 20px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+            <img src="{{ movie.poster_url }}" class="img-fluid w-100" alt="{{ movie.title }}" style="max-height: 600px; object-fit: cover;">
+            <!-- 海报上的评分标签 -->
+            <div class="position-absolute top-0 start-0 m-3 badge bg-warning text-dark fs-5 shadow">
+                <i class="fas fa-star me-1"></i>{{ movie.rating }}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8 ps-md-5 pt-4 pt-md-0">
+        <h1 class="mb-2 fw-bold text-white" style="font-size: 3rem;">{{ movie.title }}</h1>
+        <div class="d-flex flex-wrap gap-3 mb-4 text-muted align-items-center">
+            <span class="badge bg-dark border border-secondary fs-6"><i class="far fa-calendar-alt me-2"></i>{{ movie.release_year }}</span>
+            <span class="badge bg-dark border border-secondary fs-6"><i class="fas fa-tag me-2"></i>{{ movie.genre }}</span>
+        </div>
+        
+        <h5 class="mt-5 mb-3 fw-bold" style="color: var(--accent-color);"><i class="fas fa-align-left me-2"></i>剧情简介</h5>
+        <p class="lead text-light" style="font-size: 1.1rem; line-height: 1.8; opacity: 0.9;">{{ movie.description }}</p>
+        
+        <div class="mt-5 d-flex flex-wrap gap-3 align-items-center">
+            <button id="favBtn" class="btn {% if is_favorite %}btn-danger{% else %}btn-outline-light{% endif %} rounded-pill px-5 py-3 shadow-sm" onclick="toggleFav('{{ movie.id }}')" style="font-size: 1.1rem; transition: all 0.3s;">
+                <i class="{% if is_favorite %}fas{% else %}far{% endif %} fa-heart me-2" id="favIcon"></i>
+                <span id="favText" class="fw-bold">{% if is_favorite %}已收藏{% else %}加入收藏{% endif %}</span>
+            </button>
+            <button class="btn btn-warning rounded-pill px-5 py-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#ratingModal" style="font-size: 1.1rem; color: #000;">
+                <i class="fas fa-star me-2"></i>
+                <span class="fw-bold">{% if user_rating %}修改评分{% else %}我已看过 (打分){% endif %}</span>
+            </button>
+            {% if user_rating %}
+            <!-- 当前评分展示 + 删除按钮 -->
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge rounded-pill px-3 py-2" style="background: rgba(255,159,67,0.2); border: 1px solid rgba(255,159,67,0.4); color: var(--accent-color); font-size: 1rem;">
+                    <i class="fas fa-star me-1"></i>
+                    <span id="myRatingDisplay">{{ user_rating.score }}</span> 分
+                </span>
+                <button id="deleteRatingBtn" class="btn btn-outline-danger rounded-pill btn-sm px-3" onclick="deleteRating('{{ movie.id }}')" title="删除评分">
+                    <i class="fas fa-trash-alt me-1"></i>删除评分
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 打分弹窗 (保持极简) -->
+<div class="modal fade" id="ratingModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background: var(--secondary-bg); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title text-white">
+            <i class="fas fa-star me-2" style="color: var(--accent-color);"></i>
+            {% if user_rating %}修改你的评分{% else %}为影片打分{% endif %}
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('rate_movie', movie_id=movie.id) }}" method="POST">
+          <div class="modal-body text-center pt-2">
+            {% if user_rating %}
+            <p class="mb-3 text-muted">当前评分：<strong style="color: var(--accent-color);">{{ user_rating.score }} 分</strong>，拖动滑块可修改。</p>
+            {% else %}
+            <p class="mb-3 text-muted">你的每一次评分都是推荐引擎进化的养料。</p>
+            {% endif %}
+            <div class="mb-4 px-3">
+                <input type="range" class="form-range" min="1" max="10" step="0.5"
+                       id="scoreInput" name="score"
+                       value="{{ user_rating.score if user_rating else 8.0 }}"
+                       oninput="updateScore(this.value)">
+                <div class="mt-3">
+                    <span id="scoreValue" class="fw-bold" style="font-size: 3rem; color: var(--accent-color);">
+                        {{ user_rating.score if user_rating else '8.0' }}
+                    </span>
+                    <span class="text-muted fs-5"> / 10 分</span>
+                </div>
+                <div id="starDisplay" class="mt-2 text-warning fs-4"></div>
+            </div>
+          </div>
+          <div class="modal-footer border-0 justify-content-center pb-4">
+            <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+            <button type="submit" class="btn btn-warning rounded-pill px-5 fw-bold">
+                <i class="fas fa-check me-1"></i>确认提交
+            </button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 评论区 -->
+<div class="row mt-5 pt-4">
+    <div class="col-12">
+        <div class="d-flex align-items-center mb-4">
+            <h4 class="mb-0 fw-bold text-white"><i class="fas fa-comments me-3" style="color: var(--accent-color);"></i>观众热评</h4>
+            <span class="badge bg-dark border border-secondary rounded-pill ms-3 fs-6">{{ comments|length }} 条</span>
+        </div>
+        
+        <div class="card shadow-sm border-0 bg-transparent">
+            <div class="card-body p-0">
+                <form method="POST" class="mb-5 position-relative">
+                    <textarea name="content" class="form-control text-light" rows="3" placeholder="这部电影触动你了吗？留下你的光影记忆..." required 
+                              style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; resize: none;"></textarea>
+                    <button type="submit" class="btn btn-primary rounded-pill position-absolute bottom-0 end-0 m-3 px-4 shadow">
+                        <i class="fas fa-paper-plane me-1"></i>发布
+                    </button>
+                </form>
+                
+                <div class="comment-list">
+                    {% for comment in comments %}
+                    <div class="d-flex mb-4 p-4" style="background: rgba(255,255,255,0.03); border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div class="flex-shrink-0">
+                            <img src="https://ui-avatars.com/api/?name={{ comment.user.username }}&background=random&color=fff&size=50" class="rounded-circle shadow-sm" alt="{{ comment.user.username }}">
+                        </div>
+                        <div class="flex-grow-1 ms-4">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0 fw-bold text-white">{{ comment.user.username }}</h6>
+                                <small class="text-muted">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            </div>
+                            <p class="mb-0 text-light" style="line-height: 1.6; opacity: 0.85;">{{ comment.content }}</p>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 my-4" style="background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px dashed rgba(255,255,255,0.1);">
+                        <i class="far fa-comment-dots fa-3x mb-3 text-muted opacity-50"></i>
+                        <p class="text-muted fs-5 mb-0">这里静悄悄的，期待你的第一条影评</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleFav(movieId) {
+    fetch(`/toggle_favorite/${movieId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        const btn = document.getElementById('favBtn');
+        const icon = document.getElementById('favIcon');
+        const text = document.getElementById('favText');
+        
+        if (data.status === 'added') {
+            btn.classList.remove('btn-outline-light');
+            btn.classList.add('btn-danger');
+            icon.classList.remove('far');
+            icon.classList.add('fas');
+            text.innerText = '已收藏';
+        } else {
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-outline-light');
+            icon.classList.remove('fas');
+            icon.classList.add('far');
+            text.innerText = '加入收藏';
+        }
+    });
+}
+
+function updateScore(val) {
+    document.getElementById('scoreValue').innerText = parseFloat(val).toFixed(1);
+    const stars = Math.round(val / 2);
+    let starHtml = '';
+    for(let i=0; i<5; i++) {
+        if(i < stars) starHtml += '<i class="fas fa-star mx-1"></i>';
+        else starHtml += '<i class="far fa-star mx-1"></i>';
+    }
+    document.getElementById('starDisplay').innerHTML = starHtml;
+}
+
+function deleteRating(movieId) {
+    if (!confirm('确定删除这条评分吗？')) return;
+    fetch(`/delete_rating/${movieId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'deleted') {
+            // 隐藏评分展示区域
+            const badge = document.getElementById('deleteRatingBtn');
+            if (badge) badge.closest('.d-flex').style.display = 'none';
+            document.getElementById('myRatingDisplay') &&
+                (document.getElementById('myRatingDisplay').closest('.badge').style.display = 'none');
+            // 更新打分按钮文字
+            document.querySelector('[data-bs-target="#ratingModal"] span').innerText = '我已看过 (打分)';
+            // 淡出并移除整行
+            const deleteRow = document.getElementById('deleteRatingBtn');
+            if (deleteRow) deleteRow.closest('.d-flex.align-items-center').remove();
+        }
+    });
+}
+
+// 初始化星星
+document.addEventListener('DOMContentLoaded', () => {
+    const initVal = parseFloat(document.getElementById('scoreInput').value) || 8.0;
+    updateScore(initVal);
+});
+</script>
+{% endblock %}

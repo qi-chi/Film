@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}登录 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    .auth-container {
+        min-height: 80vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .auth-card {
+        width: 100%;
+        max-width: 440px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        padding: 48px 44px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .auth-card::before {
+        content: '';
+        position: absolute;
+        top: -60px; left: -60px;
+        width: 200px; height: 200px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,159,67,0.12), transparent 70%);
+        pointer-events: none;
+    }
+
+    .auth-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 8px;
+    }
+
+    .auth-logo-icon {
+        width: 52px; height: 52px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 22px;
+        color: #000;
+        box-shadow: 0 8px 20px rgba(255,159,67,0.4);
+    }
+
+    .auth-logo-text {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--accent-color);
+        letter-spacing: 1px;
+    }
+
+    .auth-title {
+        text-align: center;
+        font-size: 1.05rem;
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 36px;
+        font-weight: 400;
+    }
+
+    .auth-input-group {
+        margin-bottom: 20px;
+    }
+
+    .auth-input-group label {
+        display: block;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: rgba(255,255,255,0.6);
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+
+    .auth-input-wrap {
+        position: relative;
+    }
+
+    .auth-input-wrap i {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(255,255,255,0.35);
+        font-size: 0.95rem;
+        pointer-events: none;
+        transition: color 0.2s;
+    }
+
+    .auth-input {
+        width: 100%;
+        background: rgba(255,255,255,0.06) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 12px !important;
+        color: #fff !important;
+        padding: 13px 16px 13px 44px;
+        font-size: 0.95rem;
+        transition: all 0.25s;
+    }
+
+    .auth-input:focus {
+        background: rgba(255,255,255,0.09) !important;
+        border-color: rgba(255,159,67,0.55) !important;
+        box-shadow: 0 0 0 3px rgba(255,159,67,0.12) !important;
+        outline: none;
+    }
+
+    .auth-input:focus + i,
+    .auth-input-wrap:focus-within i {
+        color: var(--accent-color);
+    }
+
+    .auth-input::placeholder {
+        color: rgba(255,255,255,0.25) !important;
+    }
+
+    .auth-submit {
+        width: 100%;
+        padding: 13px;
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+        color: #000;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-top: 8px;
+        letter-spacing: 0.3px;
+    }
+
+    .auth-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 30px rgba(255,159,67,0.4);
+        filter: brightness(1.08);
+    }
+
+    .auth-divider {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 24px 0;
+    }
+
+    .auth-divider::before,
+    .auth-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: rgba(255,255,255,0.08);
+    }
+
+    .auth-divider span {
+        font-size: 0.8rem;
+        color: rgba(255,255,255,0.3);
+    }
+
+    .auth-footer {
+        text-align: center;
+        font-size: 0.9rem;
+        color: rgba(255,255,255,0.4);
+    }
+
+    .auth-footer a {
+        color: var(--accent-color) !important;
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    .auth-footer a:hover {
+        color: #ffb167 !important;
+        text-decoration: underline;
+    }
+</style>
+
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <div class="auth-logo-icon"><i class="fas fa-film"></i></div>
+            <span class="auth-logo-text">光影推荐</span>
+        </div>
+        <p class="auth-title">欢迎回来，继续你的光影之旅</p>
+
+        <form method="POST">
+            <div class="auth-input-group">
+                <label>用户名</label>
+                <div class="auth-input-wrap">
+                    <input type="text" name="username" class="auth-input" required placeholder="请输入用户名">
+                    <i class="fas fa-user"></i>
+                </div>
+            </div>
+            <div class="auth-input-group">
+                <label>密码</label>
+                <div class="auth-input-wrap">
+                    <input type="password" name="password" class="auth-input" required placeholder="请输入密码">
+                    <i class="fas fa-lock"></i>
+                </div>
+            </div>
+            <button type="submit" class="auth-submit">
+                <i class="fas fa-sign-in-alt me-2"></i>登录
+            </button>
+        </form>
+
+        <div class="auth-divider"><span>或者</span></div>
+
+        <div class="auth-footer">
+            还没有账号？<a href="{{ url_for('register') }}">立即免费注册</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

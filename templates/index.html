@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}首页 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    /* 首页专属全屏背景样式 - 品牌感重构 */
+    .hero-section {
+        position: relative;
+        min-height: 75vh;
+        display: flex;
+        align-items: center;
+        border-radius: 24px;
+        overflow: hidden;
+        margin-top: 10px;
+        box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+        background: #000;
+    }
+    
+    .hero-bg {
+        position: absolute;
+        top: 0; right: 0; width: 65%; height: 100%;
+        background-image: url('https://images.unsplash.com/photo-1440404653325-ab127d49abc1?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80');
+        background-size: cover;
+        background-position: center right;
+        filter: brightness(0.6) contrast(1.1);
+        z-index: 0;
+        animation: panImage 30s infinite alternate ease-in-out;
+    }
+
+    .hero-gradient-mask {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: linear-gradient(90deg, var(--primary-bg) 0%, rgba(15,12,41,0.9) 40%, transparent 100%);
+        z-index: 1;
+    }
+    
+    @keyframes panImage {
+        0% { transform: scale(1.05) translateX(0); }
+        100% { transform: scale(1.1) translateX(-2%); }
+    }
+
+    .hero-content {
+        position: relative;
+        z-index: 2;
+        padding: 60px;
+        max-width: 600px;
+    }
+
+    .hero-title {
+        font-size: 4rem;
+        font-weight: 900;
+        line-height: 1.1;
+        margin-bottom: 24px;
+        color: #fff;
+    }
+    
+    .hero-title span {
+        color: var(--accent-color);
+    }
+
+    .hero-subtitle {
+        font-size: 1.25rem;
+        color: var(--text-muted);
+        margin-bottom: 40px;
+        line-height: 1.7;
+        font-weight: 300;
+    }
+
+    .btn-hero {
+        padding: 14px 40px;
+        font-size: 1.1rem;
+        border-radius: 50px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+    }
+    
+    .btn-hero-primary {
+        background-color: var(--accent-color);
+        color: #000;
+        box-shadow: 0 10px 25px rgba(255, 159, 67, 0.3);
+    }
+    
+    .btn-hero-primary:hover {
+        background-color: #ffb167;
+        transform: translateY(-3px);
+        box-shadow: 0 15px 35px rgba(255, 159, 67, 0.5);
+        color: #000;
+    }
+
+    .btn-hero-outline {
+        border: 2px solid rgba(255,255,255,0.2);
+        color: #fff;
+        background: transparent;
+        margin-left: 15px;
+    }
+
+    .btn-hero-outline:hover {
+        border-color: #fff;
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+        transform: translateY(-3px);
+    }
+
+    /* 特色模块样式 */
+    .feature-section {
+        margin-top: 80px;
+        margin-bottom: 60px;
+    }
+
+    .feature-card {
+        background: var(--card-bg);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 20px;
+        padding: 40px 30px;
+        height: 100%;
+        transition: all 0.4s;
+    }
+
+    .feature-card:hover {
+        transform: translateY(-10px);
+        background: rgba(255,255,255,0.1);
+        border-color: rgba(255,159,67,0.3);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
+    .feature-icon-wrapper {
+        width: 70px;
+        height: 70px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        margin-bottom: 25px;
+        background: rgba(0,0,0,0.3);
+    }
+
+    /* 底部滚动小海报 */
+    .scrolling-wrapper {
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
+        padding: 20px 0;
+        mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+        -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+    }
+    
+    .scrolling-track {
+        display: inline-block;
+        animation: scrollLeft 40s linear infinite;
+    }
+    
+    .scrolling-track:hover {
+        animation-play-state: paused;
+    }
+    
+    .mini-poster {
+        width: 140px;
+        height: 210px;
+        border-radius: 12px;
+        display: inline-block;
+        margin: 0 10px;
+        background-size: cover;
+        background-position: center;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        transition: transform 0.3s;
+        cursor: pointer;
+    }
+
+    .mini-poster:hover {
+        transform: scale(1.08) translateY(-10px);
+        border: 2px solid var(--accent-color);
+    }
+
+    @keyframes scrollLeft {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+    }
+</style>
+
+<div class="hero-section">
+    <div class="hero-bg"></div>
+    <div class="hero-gradient-mask"></div>
+    <div class="hero-content">
+        <h1 class="hero-title">不止是电影<br><span>为你定制</span>的观影体验</h1>
+        <p class="hero-subtitle">
+            打破传统分类束缚。我们的异构深度学习模型，通过分析您的年龄、性别与历史打分行为，为您在浩瀚光影中精准定位下一个挚爱。
+        </p>
+        <div class="d-flex align-items-center">
+            {% if current_user.is_authenticated %}
+                <a class="btn-hero btn-hero-primary" href="{{ url_for('recommendations') }}"><i class="fas fa-magic me-2"></i>开启智能推荐</a>
+                <a class="btn-hero btn-hero-outline" href="{{ url_for('movies') }}"><i class="fas fa-film me-2"></i>浏览影片库</a>
+            {% else %}
+                <a class="btn-hero btn-hero-primary" href="{{ url_for('register') }}"><i class="fas fa-user-plus me-2"></i>免费加入体验</a>
+                <a class="btn-hero btn-hero-outline" href="{{ url_for('login') }}"><i class="fas fa-sign-in-alt me-2"></i>登录账号</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- 三大核心功能模块 -->
+<div class="feature-section row g-4">
+    <div class="col-md-4">
+        <div class="feature-card">
+            <div class="feature-icon-wrapper text-warning">
+                <i class="fas fa-brain"></i>
+            </div>
+            <h4 class="fw-bold mb-3">深度学习模型推荐</h4>
+            <p class="text-muted m-0">运用 PyTorch 搭建的底层双塔模型，精准捕捉影片类型、发行年份与用户特征之间的非线性复杂关系。</p>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="feature-card">
+            <div class="feature-icon-wrapper" style="color: var(--accent-color);">
+                <i class="fas fa-star-half-alt"></i>
+            </div>
+            <h4 class="fw-bold mb-3">基于行为的个性化</h4>
+            <p class="text-muted m-0">你在平台上的每一次打分与收藏，都会成为模型不断进化、越来越懂你的养料。</p>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="feature-card">
+            <div class="feature-icon-wrapper text-info">
+                <i class="fas fa-chart-line"></i>
+            </div>
+            <h4 class="fw-bold mb-3">多维数据洞察</h4>
+            <p class="text-muted m-0">通过 ECharts 驱动的可视化大屏，直观展示平台电影的流派分布与时代变迁趋势。</p>
+        </div>
+    </div>
+</div>
+
+<!-- 底部滚动海报演示 -->
+<div class="mb-5">
+    <h5 class="fw-bold text-center mb-4" style="color: var(--text-muted); letter-spacing: 2px;">热 门 影 片 展 示</h5>
+    <div class="scrolling-wrapper">
+        <div class="scrolling-track">
+            <!-- 使用真实的 TMDB 海报链接模拟 -->
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/1E5baAaEse26fej7uHcjOgEE2t2.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/rzO02vX7Q9Hh1Y55g8hG9v3QG0S.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/vMzGj5O6pIlA3AhiHEDR7J8zOIf.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/tnAuB8q5vv7Tie8IXONINkQ8HqZ.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/1E5baAaEse26fej7uHcjOgEE2t2.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/8cdWjvZQUExUUTzyp4t6EDMubfO.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg');"></div>
+            <div class="mini-poster" style="background-image: url('https://image.tmdb.org/t/p/w500/rzO02vX7Q9Hh1Y55g8hG9v3QG0S.jpg');"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

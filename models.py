@@ -1,0 +1,52 @@
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import UserMixin
+from datetime import datetime
+
+db = SQLAlchemy()
+
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
+    gender = db.Column(db.String(10), nullable=True)
+    age = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    favorites = db.relationship('Favorite', backref='user', lazy=True)
+    comments = db.relationship('Comment', backref='user', lazy=True)
+    ratings = db.relationship('Rating', backref='user', lazy=True) # 新增用户评分关系
+
+class Movie(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    release_year = db.Column(db.Integer, nullable=True)
+    genre = db.Column(db.String(100), nullable=True)
+    rating = db.Column(db.Float, default=0.0)
+    poster_url = db.Column(db.String(255), nullable=True)
+    
+    favorites = db.relationship('Favorite', backref='movie', lazy=True)
+    comments = db.relationship('Comment', backref='movie', lazy=True)
+    ratings = db.relationship('Rating', backref='movie', lazy=True) # 新增电影被评分关系
+
+class Rating(db.Model):
+    """新增：用户观影/评分历史记录表"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
+    score = db.Column(db.Float, nullable=False) # 用户给出的评分
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Favorite(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
