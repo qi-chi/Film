@@ -403,7 +403,10 @@
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
                             <a class="nav-link d-flex align-items-center" href="{{ url_for('profile') }}">
-                                <img src="https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=32" class="rounded-circle me-2" alt="Avatar">
+                                <img src="{{ current_user.avatar or 'https://ui-avatars.com/api/?name=' + current_user.username + '&background=ff9f43&color=000&size=32' }}" 
+     class="rounded-circle me-2" 
+     style="width: 32px; height: 32px; object-fit: cover;" 
+     alt="Avatar">
                                 {{ current_user.username }}
                             </a>
                         </li>

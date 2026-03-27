@@ -8,22 +8,37 @@ from flask_login import LoginManager, login_user, login_required, logout_user, c
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Movie, Favorite, Comment, Rating
 from recommender import HeteroRecommender
+import uuid
+from werkzeug.utils import secure_filename
 from content_recommender import (
     compute_and_save_embeddings, get_hybrid_recommendations, embeddings_ready
 )
 
 app = Flask(__name__)
+
+# 头像上传配置
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads', 'avatars')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+MAX_CONTENT_LENGTH = 5 * 1024 * 1024  # 5MB
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+app.config['ALLOWED_EXTENSIONS'] = ALLOWED_EXTENSIONS
+
+# 确保上传目录存在
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 app.config['SECRET_KEY'] = 'your-secret-key-for-development'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///movies.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db.init_app(app)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = '请先登录以访问此页面。'
-
+from flask_migrate import Migrate
+migrate = Migrate(app, db)
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -124,18 +139,75 @@ def logout():
     flash('您已退出登录。', 'info')
     return redirect(url_for('index'))
 
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+@app.route('/upload_avatar', methods=['POST'])
+@login_required
+def upload_avatar():
+    # 检查是否有文件上传
+    if 'avatar' not in request.files:
+        return jsonify({'error': '未选择文件'}), 400
+    file = request.files['avatar']
+    if file.filename == '':
+        return jsonify({'error': '文件名为空'}), 400
+    if not allowed_file(file.filename):
+        return jsonify({'error': '不支持的文件类型，请上传 jpg/png/gif 图片'}), 400
+
+    # 生成安全的文件名（避免重名）
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    filename = f"{current_user.id}_{uuid.uuid4().hex}.{ext}"
+    # 保存文件
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(file_path)
+
+    # 保存相对路径到数据库（用于前端显示）
+    avatar_url = url_for('static', filename=f'uploads/avatars/{filename}')
+    current_user.avatar = avatar_url
+    db.session.commit()
+
+    return jsonify({'success': True, 'avatar_url': avatar_url})
+
 # 7. 个人中心
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
     if request.method == 'POST':
+        username = request.form.get('username')
         email = request.form.get('email')
         age = request.form.get('age')
         gender = request.form.get('gender')
         
-        current_user.email = email if email else None
+        # 处理用户名修改（唯一性校验）
+        if username and username != current_user.username:
+            # 检查用户名是否已被其他用户占用
+            existing_user = User.query.filter(User.username == username, User.id != current_user.id).first()
+            if existing_user:
+                flash('用户名已被占用，请选择其他用户名。', 'danger')
+                return redirect(url_for('profile'))
+            current_user.username = username
+        
+        # 更新其他信息
+        if email:
+    # 格式校验（简单正则）
+            import re
+            email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(email_regex, email):
+                flash('邮箱格式无效，请重新输入。', 'danger')
+                return redirect(url_for('profile'))
+            current_user.email = email
+        else:
+    # 用户清空邮箱，设为 None
+            current_user.email = None
         if age:
-            current_user.age = int(age)
+            try:
+                current_user.age = int(age)
+            except ValueError:
+                flash('年龄必须是数字。', 'danger')
+                return redirect(url_for('profile'))
+        else:
+            current_user.age = None
         current_user.gender = gender
         
         db.session.commit()
@@ -143,7 +215,6 @@ def profile():
         return redirect(url_for('profile'))
         
     return render_template('profile.html')
-
 # 2. 电影展示与搜索
 @app.route('/movies')
 @login_required
@@ -337,22 +408,60 @@ def delete_rating(movie_id):
         return jsonify({'status': 'deleted'})
     return jsonify({'status': 'not_found'}), 404
 
-# 8. AI 小助手 API
+# 8. AI 小助手 API（智谱 GLM 接入 · 纯文本无任何格式）
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def ai_chat():
-    data = request.get_json()
-    user_message = data.get('message', '')
+    try:
+        from zhipuai import ZhipuAI
+    except:
+        return jsonify({'reply': 'AI 服务未就绪，请检查依赖包'})
     
-    # 这里可以对接真实的 LLM API
-    # 现模拟简单的基于规则的回复
-    response = "我是您的AI小助手！关于推荐系统，您可以问我如何找电影、如何修改资料等。"
-    if '推荐' in user_message:
-        response = "您可以点击导航栏的【智能推荐】来查看深度学习模型为您量身定制的电影列表！"
-    elif '收藏' in user_message:
-        response = "在电影详情页点击【收藏】按钮即可，之后可以在【我的收藏】中查看。"
+    data = request.get_json()
+    user_message = data.get('message', '').strip()
+
+    if not user_message:
+        return jsonify({'reply': '请输入你想咨询的问题~'})
+
+    try:
+        # ========== 智谱 AI 环境变量版本（可直接提交Git）==========
+        from zhipuai import ZhipuAI
+
+# 从系统环境变量读取 API Key，没有则不启用AI（不报错）
+        API_KEY = os.getenv("ZHIPU_API_KEY", "")
+
+        client = None
+        if API_KEY:
+            try:
+                client = ZhipuAI(api_key=API_KEY)
+            except:
+                client = None
+        response = client.chat.completions.create(
+            model="glm-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是电影推荐助手，只能用纯自然口语中文回答，绝对禁止使用任何 Markdown 格式，禁止使用 ## ** - 等任何符号，不要标题，不要列表，不要加粗，只用正常段落文字回答。"
+                },
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+        )
         
-    return jsonify({'reply': response})
+        reply = response.choices[0].message.content.strip()
+        
+        # 强制清理所有格式符号，确保 100% 干净文本
+        reply = reply.replace("**", "")
+        reply = reply.replace("## ", "")
+        reply = reply.replace("- ", "")
+        reply = reply.replace("### ", "")
+        reply = reply.replace("* ", "")
+        reply = reply.replace("> ", "")
+
+    except Exception as e:
+        reply = "AI 小助手暂时无法服务，请稍后再试"
+
+    return jsonify({'reply': reply})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
