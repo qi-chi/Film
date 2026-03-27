@@ -12,8 +12,11 @@
     <!-- 左侧信息卡片 -->
     <div class="col-md-4">
         <div class="card shadow-lg text-center p-4 border-0 h-100" style="background: rgba(255,255,255,0.03); border-radius: 20px;">
-            <div class="mb-4 position-relative d-inline-block mx-auto">
-                <img src="https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=150" class="rounded-circle shadow-lg border border-3 border-dark" alt="Avatar">
+            <div class="mb-4 position-relative d-inline-block mx-auto" id="avatar-container">
+                <img src="{{ current_user.avatar or 'https://ui-avatars.com/api/?name=' + current_user.username + '&background=ff9f43&color=000&size=150' }}" 
+     class="rounded-circle shadow-lg border border-3 border-dark" 
+     alt="Avatar" id="avatar-img" 
+     style="cursor: pointer; width: 150px; height: 150px; object-fit: cover;">
                 <span class="position-absolute bottom-0 end-0 bg-success border border-dark rounded-circle" style="width: 20px; height: 20px;"></span>
             </div>
             <h3 class="text-white fw-bold mb-1">{{ current_user.username }}</h3>
@@ -38,7 +41,7 @@
                     <div class="mb-4 row align-items-center">
                         <label class="col-sm-3 col-form-label text-md-end text-light fw-bold">用户名</label>
                         <div class="col-sm-9">
-                            <input type="text" class="form-control bg-dark text-light border-secondary rounded-pill px-4 py-2" value="{{ current_user.username }}" disabled style="opacity: 0.7;">
+                            <input type="text" name="username" class="form-control bg-dark text-light border-secondary rounded-pill px-4 py-2" value="{{ current_user.username }}" placeholder="请输入用户名">
                         </div>
                     </div>
                     <div class="mb-4 row align-items-center">
@@ -75,4 +78,121 @@
         </div>
     </div>
 </div>
+
+<!-- 浮动菜单 -->
+<div id="avatar-menu" style="display: none; position: absolute; background: #1e1e2f; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 8px 0; min-width: 120px; z-index: 1000;">
+    <div class="avatar-menu-item" data-action="view">👁️ 查看头像</div>
+    <div class="avatar-menu-item" data-action="change">📷 更换头像</div>
+</div>
+
+<!-- 隐藏的文件输入 -->
+<input type="file" id="avatar-upload" accept="image/jpeg,image/png,image/gif" style="display: none;">
+
+<style>
+.avatar-menu-item {
+    padding: 8px 16px;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.avatar-menu-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const avatarImg = document.getElementById('avatar-img');
+    const avatarContainer = document.getElementById('avatar-container');
+    const avatarMenu = document.getElementById('avatar-menu');
+    const fileInput = document.getElementById('avatar-upload');
+
+    // 显示菜单
+    avatarImg.addEventListener('click', function(e) {
+        e.stopPropagation();
+        // 计算菜单位置
+        const rect = avatarImg.getBoundingClientRect();
+        avatarMenu.style.top = rect.bottom + window.scrollY + 8 + 'px';
+        avatarMenu.style.left = rect.left + window.scrollX + (rect.width / 2) - 60 + 'px';
+        avatarMenu.style.display = 'block';
+    });
+
+    // 点击其他地方关闭菜单
+    document.addEventListener('click', function(e) {
+        if (!avatarMenu.contains(e.target) && e.target !== avatarImg) {
+            avatarMenu.style.display = 'none';
+        }
+    });
+
+    // 查看头像
+    document.querySelector('[data-action="view"]').addEventListener('click', function() {
+        avatarMenu.style.display = 'none';
+        const imgSrc = avatarImg.src;
+        // 弹出模态框查看大图
+        const modalHtml = `
+            <div id="avatar-modal" style="position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2000;" onclick="this.remove()">
+                <img src="${imgSrc}" style="max-width: 90%; max-height: 90%; border-radius: 12px;">
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    });
+
+    // 更换头像
+    document.querySelector('[data-action="change"]').addEventListener('click', function() {
+        avatarMenu.style.display = 'none';
+        fileInput.click();  // 触发文件选择
+    });
+
+    // 文件选择后自动上传
+    fileInput.addEventListener('change', function() {
+        const file = this.files[0];
+        if (!file) return;
+
+        // 检查文件类型
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        if (!allowedTypes.includes(file.type)) {
+            alert('请选择 jpg、png 或 gif 格式的图片');
+            return;
+        }
+
+        // 检查文件大小（5MB）
+        if (file.size > 5 * 1024 * 1024) {
+            alert('图片大小不能超过 5MB');
+            return;
+        }
+
+        // 创建 FormData 并上传
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        fetch('/upload_avatar', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+    // 更新头像图片
+    avatarImg.src = data.avatar_url + '?t=' + new Date().getTime();
+    // 同时更新右上角头像
+    const topAvatar = document.querySelector('.navbar-nav .rounded-circle');
+    if (topAvatar) {
+        topAvatar.src = data.avatar_url + '?t=' + new Date().getTime();
+    }
+    alert('头像更新成功！');
+} else {
+                alert('上传失败：' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('上传出错:', error);
+            alert('网络错误，请稍后重试');
+        });
+
+        // 清空 input，以便再次选择同一文件时触发 change
+        fileInput.value = '';
+    });
+});
+</script>
+
 {% endblock %}

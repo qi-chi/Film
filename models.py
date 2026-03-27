@@ -12,6 +12,7 @@ class User(db.Model, UserMixin):
     gender = db.Column(db.String(10), nullable=True)
     age = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    avatar = db.Column(db.String(200), nullable=True)  # 新增头像字段
 
     favorites = db.relationship('Favorite', backref='user', lazy=True)
     comments = db.relationship('Comment', backref='user', lazy=True)
