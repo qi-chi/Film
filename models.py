@@ -20,12 +20,16 @@ class User(db.Model, UserMixin):
 
 class Movie(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    tmdb_id = db.Column(db.Integer, nullable=True, index=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
     release_year = db.Column(db.Integer, nullable=True)
+    release_date = db.Column(db.String(20), nullable=True)   # 精确日期，如 2025-06-15
     genre = db.Column(db.String(100), nullable=True)
     rating = db.Column(db.Float, default=0.0)
     poster_url = db.Column(db.String(255), nullable=True)
+    # 'popular' | 'now_playing' | 'upcoming'
+    movie_type = db.Column(db.String(20), nullable=False, default='popular')
     
     favorites = db.relationship('Favorite', backref='movie', lazy=True)
     comments = db.relationship('Comment', backref='movie', lazy=True)

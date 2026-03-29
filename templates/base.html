@@ -377,6 +377,11 @@
         ::-webkit-scrollbar-track { background: var(--primary-bg); }
         ::-webkit-scrollbar-thumb { background: var(--secondary-bg); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--accent-color); }
+
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1);   opacity: 1;   }
+            50%       { transform: scale(1.5); opacity: 0.5; }
+        }
     </style>
 </head>
 <body>
@@ -395,6 +400,13 @@
                 <ul class="navbar-nav mx-auto">
                     {% if current_user.is_authenticated %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('movies') }}">电影库</a></li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('now_playing') }}" style="position:relative;">
+                                热映
+                                <span style="position:absolute;top:6px;right:-4px;width:6px;height:6px;border-radius:50%;background:#ff6b6b;animation:pulse-dot 1.2s infinite;"></span>
+                            </a>
+                        </li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('upcoming') }}">待映</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('recommendations') }}">智能推荐</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('visualize') }}">数据洞察</a></li>
                     {% endif %}

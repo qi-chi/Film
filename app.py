@@ -37,13 +37,96 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = '请先登录以访问此页面。'
-from flask_migrate import Migrate
+from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
 migrate = Migrate(app, db)
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 # --- CLI Commands ---
+
+@app.cli.command("upgrade-db")
+def upgrade_db():
+    """为现有数据库添加 tmdb_id / movie_type / release_date 字段（幂等，可重复执行）。"""
+    import sqlite3
+    db_path = os.path.join(os.path.dirname(__file__), 'instance', 'movies.db')
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    new_cols = [
+        ("tmdb_id",      "INTEGER"),
+        ("movie_type",   "VARCHAR(20) DEFAULT 'popular'"),
+        ("release_date", "VARCHAR(20)"),
+    ]
+    for col_name, col_def in new_cols:
+        try:
+            cur.execute(f"ALTER TABLE movie ADD COLUMN {col_name} {col_def}")
+            print(f"  已添加字段: {col_name}")
+        except Exception:
+            print(f"  字段已存在（跳过）: {col_name}")
+    conn.commit()
+    conn.close()
+    print("数据库升级完成。")
+
+
+@app.cli.command("sync-screenings")
+def sync_screenings():
+    """从 TMDB 同步正在热映和即将上映电影到数据库（按 tmdb_id 去重）。"""
+    from data_loader import fetch_tmdb_now_playing, fetch_tmdb_upcoming
+
+    with app.app_context():
+        existing = {
+            m.tmdb_id: m
+            for m in Movie.query.filter(Movie.tmdb_id.isnot(None)).all()
+        }
+
+        def upsert_batch(df, movie_type):
+            from datetime import date
+            today = date.today().isoformat()
+            added = updated = skipped = 0
+            for _, row in df.iterrows():
+                # upcoming 模式下，跳过上映日期已过期的条目
+                rd = row.get('release_date', '') or ''
+                if movie_type == 'upcoming' and rd and rd < today:
+                    skipped += 1
+                    continue
+                tid = int(row['tmdb_id'])
+                poster = row['poster_url'] or \
+                    f"https://via.placeholder.com/300x450?text={urllib.parse.quote(row['title'][:10])}"
+                if tid in existing:
+                    m = existing[tid]
+                    m.movie_type   = movie_type
+                    m.release_date = rd
+                    updated += 1
+                else:
+                    m = Movie(
+                        tmdb_id      = tid,
+                        title        = row['title'],
+                        description  = row['overview'],
+                        release_year = row['year'],
+                        release_date = rd,
+                        genre        = row['primary_genre'],
+                        rating       = row['rating'],
+                        poster_url   = poster,
+                        movie_type   = movie_type,
+                    )
+                    db.session.add(m)
+                    existing[tid] = m
+                    added += 1
+            db.session.commit()
+            print(f"  [{movie_type}] 新增 {added} 部，更新 {updated} 部，跳过过期 {skipped} 部。")
+
+        print("正在拉取正在热映电影...")
+        now_df = fetch_tmdb_now_playing(100)
+        if not now_df.empty:
+            upsert_batch(now_df, 'now_playing')
+
+        print("正在拉取即将上映电影...")
+        up_df = fetch_tmdb_upcoming(100)
+        if not up_df.empty:
+            upsert_batch(up_df, 'upcoming')
+
+        print("同步完成！")
+
 
 @app.cli.command("build-embeddings")
 def build_embeddings_cmd():
@@ -407,6 +490,32 @@ def delete_rating(movie_id):
         db.session.commit()
         return jsonify({'status': 'deleted'})
     return jsonify({'status': 'not_found'}), 404
+
+# 9. 正在热映（只展示近 90 天内上映的，过了档期的自动隐藏）
+@app.route('/now-playing')
+@login_required
+def now_playing():
+    from datetime import date, timedelta
+    today  = date.today().isoformat()
+    cutoff = (date.today() - timedelta(days=90)).isoformat()  # 最长院线窗口约 90 天
+    movies = Movie.query.filter_by(movie_type='now_playing') \
+        .filter(Movie.release_date >= cutoff) \
+        .filter(Movie.release_date <= today) \
+        .order_by(Movie.rating.desc()).all()
+    return render_template('now_playing.html', movies=movies)
+
+
+# 10. 即将上映（只展示今天及以后上映的）
+@app.route('/upcoming')
+@login_required
+def upcoming():
+    from datetime import date
+    today = date.today().isoformat()  # 'YYYY-MM-DD' 字符串比较对 ISO 格式天然有效
+    movies = Movie.query.filter_by(movie_type='upcoming') \
+        .filter(Movie.release_date >= today) \
+        .order_by(Movie.release_date.asc()).all()
+    return render_template('upcoming.html', movies=movies)
+
 
 # 8. AI 小助手 API（智谱 GLM 接入 · 纯文本无任何格式）
 @app.route('/api/chat', methods=['POST'])
