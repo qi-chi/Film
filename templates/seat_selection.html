@@ -521,15 +521,9 @@
     align-items: center;
     justify-content: center;
 }
-.qr-box img {
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: 8px;
-}
-.qr-placeholder {
-    color: #666;
-    text-align: center;
-    font-size: 0.85rem;
+.qr-box svg {
+    width: 100%;
+    height: 100%;
 }
 .qr-hint {
     color: #ef4444;
@@ -719,14 +713,14 @@
     <!-- 按钮栏 -->
     <div class="action-bar-modern">
         <a href="{{ url_for('now_playing') if movie.movie_type == 'now_playing' else url_for('upcoming') }}" class="btn-glass btn-primary">
-    <i class="fas fa-arrow-left"></i> 返回选片
-</a>
+            <i class="fas fa-arrow-left"></i> 返回选片
+        </a>
         <button type="button" class="btn-glass btn-primary" id="payBtn" onclick="openPayModal()" disabled>
             <i class="fas fa-credit-card"></i> 立即支付 ¥<span id="btnPrice">0</span>
         </button>
     </div>
     <footer class="seat-tip-footer">
-        <i class="fas fa-lightbulb"></i> 点击座位即可选座 / 再次点击取消 | 优选区¥35（带黄点标记），普通区¥25
+    <i class="fas fa-lightbulb"></i> 点击座位即可选座 / 再次点击取消 | 优选区¥35（带黄点标记），普通区¥25 | 右键座位可查看座位视角哦~
     </footer>
 </div>
 
@@ -764,9 +758,22 @@
             <div class="qr-section">
                 <h4>请使用微信或支付宝扫码</h4>
                 <div class="qr-box">
-                    <img src="{{ url_for('static', filename='images/payment-qr.png') }}" 
-                         alt="收款码"
-                         onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'qr-placeholder\'><i class=\'fas fa-qrcode\' style=\'font-size:3rem; color:#999;\'></i><br><br>请放置收款码至<br>static/images/payment-qr.png</div>'">
+                    <svg width="200" height="200" viewBox="0 0 200 200">
+                        <rect width="200" height="200" fill="white"/>
+                        <rect x="20" y="20" width="40" height="40" fill="black"/>
+                        <rect x="80" y="20" width="40" height="40" fill="black"/>
+                        <rect x="140" y="20" width="40" height="40" fill="black"/>
+                        <rect x="20" y="80" width="40" height="40" fill="black"/>
+                        <rect x="80" y="80" width="40" height="40" fill="black"/>
+                        <rect x="140" y="80" width="40" height="40" fill="black"/>
+                        <rect x="20" y="140" width="40" height="40" fill="black"/>
+                        <rect x="80" y="140" width="40" height="40" fill="black"/>
+                        <rect x="140" y="140" width="40" height="40" fill="black"/>
+                        <rect x="50" y="50" width="10" height="10" fill="black"/>
+                        <rect x="110" y="50" width="10" height="10" fill="black"/>
+                        <rect x="50" y="110" width="10" height="10" fill="black"/>
+                        <rect x="110" y="110" width="10" height="10" fill="black"/>
+                    </svg>
                 </div>
                 <div class="qr-hint">
                     <i class="fas fa-exclamation-circle"></i> 
@@ -1025,5 +1032,475 @@ document.addEventListener("DOMContentLoaded", function() {
     }
     {% endfor %}
 });
+</script>
+
+<!-- 3D预览模态框 -->
+<div id="seat3dModal" class="modal-3d" style="display: none;">
+    <div class="modal-3d-content">
+        <span class="close-3d">&times;</span>
+        <div id="canvas-container" style="width: 100%; height: 100%;"></div>
+    </div>
+</div>
+
+<style>
+.modal-3d {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.9);
+    z-index: 10000;
+    justify-content: center;
+    align-items: center;
+}
+.modal-3d-content {
+    position: relative;
+    width: 90%;
+    height: 90%;
+    background: #111;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 30px rgba(0,0,0,0.5);
+}
+.close-3d {
+    position: absolute;
+    top: 15px;
+    right: 25px;
+    color: #fff;
+    font-size: 35px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 10001;
+    background: rgba(0,0,0,0.5);
+    width: 40px;
+    height: 40px;
+    text-align: center;
+    line-height: 40px;
+    border-radius: 50%;
+    transition: 0.2s;
+}
+.close-3d:hover {
+    background: #ff4444;
+}
+#canvas-container {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+</style>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+    // ---------- 影院参数（优化后）----------
+    const config = {
+        rows: 10,
+        cols: 15,
+        screenWidth: 11,          // 银幕加宽
+        screenHeight: 6.5,
+        screenDistance: 7.0,      // 银幕距离第一排更远（6米）
+        rowSpacing: 1.0,
+        colSpacing: 0.7,
+        seatWidth: 0.6,
+        seatDepth: 0.55,
+        stepHeight: 0.2,
+        eyeHeightBase: 1.0,
+        eyeStep: 0.1,            // 每排眼睛高度增量降低
+        platformThick: 0.1,
+        platformColor: 0x4a5568,
+        firstRowZ: 0,
+    };
+
+    const screenCenterZ = -config.screenDistance;
+    const screenCenterY = config.screenHeight / 2;
+
+    // 预计算每个座位的世界坐标（相机位置）
+    const seatPositions = {};
+    for (let row = 1; row <= config.rows; row++) {
+        for (let col = 1; col <= config.cols; col++) {
+            const z = config.firstRowZ + (row - 1) * config.rowSpacing;
+            const totalWidth = (config.cols - 1) * config.colSpacing;
+            const startX = -totalWidth / 2;
+            const x = startX + (col - 1) * config.colSpacing;
+            const y = config.eyeHeightBase + (row - 1) * config.eyeStep;
+            seatPositions[`${row}-${col}`] = { x, y, z };
+        }
+    }
+
+    let scene, camera, cameraPersp, labelRenderer, controls, container, lightFollow;
+    let isInitialized = false;
+
+    function createCSS2DLabel(text, color, fontSize = '14px', bgOpacity = 0.6, padding = '4px 8px') {
+        const div = document.createElement('div');
+        div.textContent = text;
+        div.style.color = color;
+        div.style.fontSize = fontSize;
+        div.style.fontWeight = 'bold';
+        div.style.fontFamily = 'Inter, "Microsoft YaHei", sans-serif';
+        div.style.background = `rgba(0,0,0,${bgOpacity})`;
+        div.style.padding = padding;
+        div.style.borderRadius = '20px';
+        div.style.border = `1px solid ${color}`;
+        div.style.backdropFilter = 'blur(4px)';
+        div.style.whiteSpace = 'nowrap';
+        return new CSS2DObject(div);
+    }
+
+    function init3D() {
+        if (isInitialized) return;
+        container = document.getElementById('canvas-container');
+        if (!container) return;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        if (width === 0 || height === 0) {
+            setTimeout(init3D, 100);
+            return;
+        }
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050510);
+        scene.fog = new THREE.FogExp2(0x050510, 0.008);
+
+        cameraPersp = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+        cameraPersp.position.set(0, config.eyeHeightBase + 0.5, 2);
+        cameraPersp.lookAt(0, screenCenterY, screenCenterZ);
+        camera = cameraPersp;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(width, height);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(width, height);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.left = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        container.appendChild(labelRenderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enableZoom = true;
+        controls.zoomSpeed = 1.0;
+        controls.target.set(0, screenCenterY, screenCenterZ);
+        controls.maxPolarAngle = Math.PI / 2.2;
+
+        // 灯光
+        const ambientLight = new THREE.AmbientLight(0x404060);
+        scene.add(ambientLight);
+        const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        mainLight.position.set(2, 5, -3);
+        mainLight.castShadow = true;
+        scene.add(mainLight);
+        const fillLight = new THREE.PointLight(0x8866aa, 0.4);
+        fillLight.position.set(0, 2, 3);
+        scene.add(fillLight);
+        const backLight = new THREE.PointLight(0xffaa66, 0.3);
+        backLight.position.set(0, 2, -4);
+        scene.add(backLight);
+        lightFollow = new THREE.PointLight(0xffaa88, 1.0);
+        scene.add(lightFollow);
+
+        // 银幕
+        const screenMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            emissive: 0x2266aa,
+            emissiveIntensity: 0.5,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.95
+        });
+        const screenPlane = new THREE.Mesh(new THREE.PlaneGeometry(config.screenWidth, config.screenHeight), screenMat);
+        screenPlane.position.set(0, screenCenterY, screenCenterZ);
+        scene.add(screenPlane);
+
+        // 银幕边框
+        const borderMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        const addBorder = (w, h, x, y, z) => {
+            const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.1), borderMat);
+            box.position.set(x, y, z);
+            scene.add(box);
+        };
+        addBorder(0.1, config.screenHeight + 0.2, -config.screenWidth / 2 - 0.05, screenCenterY, screenCenterZ - 0.05);
+        addBorder(0.1, config.screenHeight + 0.2, config.screenWidth / 2 + 0.05, screenCenterY, screenCenterZ - 0.05);
+        addBorder(config.screenWidth + 0.2, 0.1, 0, screenCenterY + config.screenHeight / 2 + 0.05, screenCenterZ - 0.05);
+        addBorder(config.screenWidth + 0.2, 0.1, 0, screenCenterY - config.screenHeight / 2 - 0.05, screenCenterZ - 0.05);
+
+        // 去掉银幕上的电影名（按照用户要求）
+        // 如果需要保留可以取消注释，但用户要求去掉，故注释掉
+        /*
+        const movieTitle = "{{ movie.title }}";
+        const titleLabel = createCSS2DLabel(movieTitle, '#ffffff', '28px', 0.7, '12px 28px');
+        titleLabel.position.set(0, screenCenterY + 0.8, screenCenterZ + 0.1);
+        scene.add(titleLabel);
+        */
+
+        // 地面
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.7 });
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.15;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 阶梯平台和座椅
+        const platformMat = new THREE.MeshStandardMaterial({ color: config.platformColor, roughness: 0.8 });
+        const seatMat = new THREE.MeshStandardMaterial({ color: 0x2c3e5c, roughness: 0.3, metalness: 0.6 });
+        const backMat = new THREE.MeshStandardMaterial({ color: 0x1e2f44, roughness: 0.35, metalness: 0.5 });
+        const armMat = new THREE.MeshStandardMaterial({ color: 0x3a4a6e, roughness: 0.4, metalness: 0.5 });
+        const seatHeight = 0.4, backHeight = 0.6, backThick = 0.08, armWidth = 0.07, armHeight = 0.5, armDepth = 0.5;
+
+        for (let row = 1; row <= config.rows; row++) {
+            const platformZ = config.firstRowZ + (row - 1) * config.rowSpacing - 0.3;
+            const platformWidth = (config.cols - 1) * config.colSpacing + 1.2;
+            const platformDepth = 0.9;
+            const platformY = -0.1 + (row - 1) * config.stepHeight;
+            const platform = new THREE.Mesh(new THREE.BoxGeometry(platformWidth, config.platformThick, platformDepth), platformMat);
+            platform.position.set(0, platformY + config.platformThick / 2, platformZ);
+            platform.receiveShadow = true;
+            scene.add(platform);
+
+            // LED灯带
+            const ledMat = new THREE.MeshStandardMaterial({ color: 0xffaa44, emissive: 0xff4400, emissiveIntensity: 0.6 });
+            const ledStrip = new THREE.Mesh(new THREE.BoxGeometry(platformWidth - 0.4, 0.03, 0.1), ledMat);
+            ledStrip.position.set(0, platformY + config.platformThick + 0.02, platformZ + platformDepth / 2 - 0.05);
+            scene.add(ledStrip);
+
+            for (let col = 1; col <= config.cols; col++) {
+                const pos = seatPositions[`${row}-${col}`];
+                if (!pos) continue;
+                const seatY = platformY + config.platformThick;
+                const seat = new THREE.Mesh(new THREE.BoxGeometry(config.seatWidth, seatHeight, config.seatDepth), seatMat);
+                seat.position.set(pos.x, seatY + seatHeight / 2, pos.z);
+                seat.castShadow = true;
+                scene.add(seat);
+                const back = new THREE.Mesh(new THREE.BoxGeometry(config.seatWidth, backHeight, backThick), backMat);
+                back.position.set(pos.x, seatY + seatHeight + backHeight / 2, pos.z + config.seatDepth / 2 - backThick / 2);
+                back.castShadow = true;
+                scene.add(back);
+                const leftArm = new THREE.Mesh(new THREE.BoxGeometry(armWidth, armHeight, armDepth), armMat);
+                leftArm.position.set(pos.x - config.seatWidth / 2 + armWidth / 2, seatY + seatHeight / 2 + armHeight / 2, pos.z);
+                leftArm.castShadow = true;
+                scene.add(leftArm);
+                const rightArm = new THREE.Mesh(new THREE.BoxGeometry(armWidth, armHeight, armDepth), armMat);
+                rightArm.position.set(pos.x + config.seatWidth / 2 - armWidth / 2, seatY + seatHeight / 2 + armHeight / 2, pos.z);
+                rightArm.castShadow = true;
+                scene.add(rightArm);
+            }
+        }
+
+        // 左侧阶梯过道 + 入口门（不再嵌入阶梯，单独抬高）
+        const stepMat = new THREE.MeshStandardMaterial({ color: 0x5a6e8a });
+        for (let row = 1; row <= config.rows; row++) {
+            const platformY = -0.1 + (row - 1) * config.stepHeight;
+            const stepZ = config.firstRowZ + (row - 1) * config.rowSpacing - 0.5;
+            const stepWidth = 1.2, stepDepth = 0.8;
+            const step = new THREE.Mesh(new THREE.BoxGeometry(stepWidth, config.platformThick, stepDepth), stepMat);
+            step.position.set(-(config.cols - 1) * config.colSpacing / 2 - 0.8, platformY + config.platformThick / 2, stepZ);
+            step.receiveShadow = true;
+            scene.add(step);
+            const ledStep = new THREE.Mesh(new THREE.BoxGeometry(stepWidth - 0.2, 0.03, 0.1), new THREE.MeshStandardMaterial({ color: 0xffaa66, emissive: 0xff6600, emissiveIntensity: 0.5 }));
+            ledStep.position.set(step.position.x, step.position.y + config.platformThick / 2 + 0.02, step.position.z + stepDepth / 2 - 0.05);
+            scene.add(ledStep);
+        }
+
+        // 入口门（独立于阶梯，底部放在第一级台阶高度）
+        // 入口门：放在左侧过道最前端（第一排左侧），地面高度
+const doorZ_entry = config.firstRowZ - 0.5;
+const doorBaseY_entry = -0.1;
+const doorGroup = new THREE.Group();
+const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.2, 0.1), new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.3 }));
+doorFrame.position.set(0, 1.1, 0);
+doorGroup.add(doorFrame);
+const glassMatDoor = new THREE.MeshStandardMaterial({ color: 0xaaddff, emissive: 0x2288aa, transparent: true, opacity: 0.4 });
+const glass = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.6, 0.02), glassMatDoor);
+glass.position.set(0, 1.1, 0.06);
+doorGroup.add(glass);
+const handle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), new THREE.MeshStandardMaterial({ color: 0xffcc88, metalness: 0.8 }));
+handle.position.set(0.45, 1.0, 0.08);
+doorGroup.add(handle);
+doorGroup.position.set(-(config.cols - 1) * config.colSpacing / 2 - 0.8, doorBaseY_entry, doorZ_entry);
+doorGroup.rotation.y = Math.PI / 2;
+scene.add(doorGroup);
+const entranceLabel = createCSS2DLabel('🚪 入口', '#88aaff', '14px', 0.5);
+entranceLabel.position.set(doorGroup.position.x, doorBaseY_entry + 1.8, doorGroup.position.z + 0.2);
+scene.add(entranceLabel);
+
+
+
+        // 右侧阶梯过道（对称，不加门）
+const rightStepMat = new THREE.MeshStandardMaterial({ color: 0x5a6e8a });
+for (let row = 1; row <= config.rows; row++) {
+    const platformY = -0.1 + (row - 1) * config.stepHeight;
+    const stepZ = config.firstRowZ + (row - 1) * config.rowSpacing - 0.5;
+    const stepWidth = 1.2, stepDepth = 0.8;
+    const step = new THREE.Mesh(new THREE.BoxGeometry(stepWidth, config.platformThick, stepDepth), rightStepMat);
+    step.position.set((config.cols - 1) * config.colSpacing / 2 + 0.8, platformY + config.platformThick / 2, stepZ);
+    step.receiveShadow = true;
+    scene.add(step);
+    const ledStep = new THREE.Mesh(new THREE.BoxGeometry(stepWidth - 0.2, 0.03, 0.1), new THREE.MeshStandardMaterial({ color: 0xffaa66, emissive: 0xff6600, emissiveIntensity: 0.5 }));
+    ledStep.position.set(step.position.x, step.position.y + config.platformThick / 2 + 0.02, step.position.z + stepDepth / 2 - 0.05);
+    scene.add(ledStep);
+}
+        // 银幕前左右出口（面对面）
+        const exitPositions = [
+            { x: -config.screenWidth / 2 - 1.2, z: screenCenterZ + 1.5, label: '正常出口', color: 0x4a6e8a, textColor: '#88ff88', rotY: Math.PI / 2 },
+            { x: config.screenWidth / 2 + 1.2, z: screenCenterZ + 1.5, label: '紧急出口', color: 0xcc3333, textColor: '#ff8888', rotY: -Math.PI / 2 }
+        ];
+        exitPositions.forEach(exit => {
+            const doorGroupExit = new THREE.Group();
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.4, 0.15), new THREE.MeshStandardMaterial({ color: exit.color, roughness: 0.3 }));
+            frame.position.set(0, 1.2, 0);
+            doorGroupExit.add(frame);
+            const glassExit = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.8, 0.02), new THREE.MeshStandardMaterial({ color: 0xaaddff, transparent: true, opacity: 0.4 }));
+            glassExit.position.set(0, 1.2, 0.1);
+            doorGroupExit.add(glassExit);
+            const handleExit = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.25, 0.08), new THREE.MeshStandardMaterial({ color: 0xffaa66, metalness: 0.7 }));
+            handleExit.position.set(0.55, 1.1, 0.12);
+            doorGroupExit.add(handleExit);
+            doorGroupExit.position.set(exit.x, 0, exit.z);
+            doorGroupExit.rotation.y = exit.rotY;
+            scene.add(doorGroupExit);
+            const exitLabel = createCSS2DLabel(exit.label, exit.textColor, '14px', 0.6);
+            exitLabel.position.set(exit.x, 2.0, exit.z + 0.3);
+            scene.add(exitLabel);
+            if (exit.label === '紧急出口') {
+                const pointLight = new THREE.PointLight(0xff3300, 0.6, 5);
+                pointLight.position.set(exit.x, 1.5, exit.z);
+                scene.add(pointLight);
+            }
+        });
+
+        // 行号
+        for (let row = 1; row <= config.rows; row++) {
+            const firstSeat = seatPositions[`${row}-1`];
+            if (firstSeat) {
+                const rowLabel = createCSS2DLabel(`${row}排`, '#aaccff', '12px', 0.4, '2px 6px');
+                rowLabel.position.set(firstSeat.x - 0.5, firstSeat.y - 0.2, firstSeat.z);
+                scene.add(rowLabel);
+            }
+        }
+
+        // 投影仪（提高位置）
+        const projectorGroup = new THREE.Group();
+        const bodyMatProj = new THREE.MeshStandardMaterial({ color: 0xccccdd, roughness: 0.4, metalness: 0.7 });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 0.8), bodyMatProj);
+        body.position.set(0, 0.15, 0);
+        projectorGroup.add(body);
+        const lensMatProj = new THREE.MeshStandardMaterial({ color: 0x88aaff, emissive: 0x2266aa, emissiveIntensity: 0.8 });
+        const lens = new THREE.Mesh(new THREE.SphereGeometry(0.12), lensMatProj);
+        lens.position.set(0, 0.1, 0.45);
+        projectorGroup.add(lens);
+        const armProj = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.3), new THREE.MeshStandardMaterial({ color: 0xaaaaaa }));
+        armProj.position.set(0, -0.1, -0.2);
+        projectorGroup.add(armProj);
+        const lastRowZ = config.firstRowZ + (config.rows - 1) * config.rowSpacing;
+        projectorGroup.position.set(0, 2.8, lastRowZ + 1.0); // 高度2.8米
+        scene.add(projectorGroup);
+        const projLabel = createCSS2DLabel('📽️ 投影仪', '#88aaff', '10px', 0.4, '2px 6px');
+        projLabel.position.set(0, 3.1, lastRowZ + 1.0);
+        scene.add(projLabel);
+
+        // 氛围粒子
+        const particleCount = 200;
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlePositions = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount; i++) {
+            particlePositions[i*3] = (Math.random() - 0.5) * 20;
+            particlePositions[i*3+1] = Math.random() * 2;
+            particlePositions[i*3+2] = (Math.random() - 0.5) * 15 - 5;
+        }
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        const particlesMat = new THREE.PointsMaterial({ color: 0x88aaff, size: 0.05, transparent: true, opacity: 0.3 });
+        const particles = new THREE.Points(particlesGeometry, particlesMat);
+        scene.add(particles);
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', onWindowResize);
+        function onWindowResize() {
+            const w = container.clientWidth, h = container.clientHeight;
+            if (w === 0 || h === 0) return;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+            labelRenderer.setSize(w, h);
+        }
+
+        isInitialized = true;
+    }
+
+    function setCameraBySeat(row, col) {
+        const pos = seatPositions[`${row}-${col}`];
+        if (!pos) return;
+        camera.position.set(pos.x, pos.y, pos.z);
+        controls.target.set(0, screenCenterY, screenCenterZ);
+        controls.update();
+
+        const maxXOffset = (config.cols - 1) * config.colSpacing / 2;
+        const maxZDepth = (config.rows - 1) * config.rowSpacing;
+        const xNorm = Math.abs(pos.x) / maxXOffset;
+        const zNorm = pos.z / maxZDepth;
+        let intensity = 1.0 - (xNorm * 0.3 + zNorm * 0.2);
+        intensity = Math.max(0.4, Math.min(1.0, intensity));
+        lightFollow.intensity = intensity;
+        lightFollow.position.set(pos.x, pos.y, pos.z);
+    }
+
+    function show3DPreview(row, col) {
+        const modal = document.getElementById('seat3dModal');
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            if (!isInitialized) init3D();
+            setCameraBySeat(row, col);
+        }, 100);
+    }
+
+    function close3DPreview() {
+        document.getElementById('seat3dModal').style.display = 'none';
+    }
+
+    window.show3DPreview = show3DPreview;
+    window.close3DPreview = close3DPreview;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const closeBtn = document.querySelector('.close-3d');
+        if (closeBtn) closeBtn.addEventListener('click', close3DPreview);
+        const modal = document.getElementById('seat3dModal');
+        if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) close3DPreview(); });
+        const container = document.querySelector('.cinema-container');
+        if (container) {
+            container.addEventListener('contextmenu', (e) => {
+                const btn = e.target.closest('.seat-btn');
+                if (btn && !btn.disabled && !btn.classList.contains('seat-sold')) {
+                    e.preventDefault();
+                    const row = btn.getAttribute('data-row');
+                    const col = btn.getAttribute('data-col');
+                    if (row && col) show3DPreview(parseInt(row), parseInt(col));
+                }
+            });
+        }
+    });
 </script>
 {% endblock %}
