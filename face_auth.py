@@ -2,8 +2,10 @@ import cv2
 import json
 import numpy as np
 import os
+import base64
+from io import BytesIO
+from PIL import Image
 
-# 自动兼容中文路径，100%不报错
 def get_face_cascade():
     try:
         cv2_dir = os.path.dirname(cv2.__file__)
@@ -17,112 +19,143 @@ def get_face_cascade():
 
 face_cascade = get_face_cascade()
 
-if not face_cascade:
-    print("⚠️  人脸检测已启用兼容模式，功能正常可用")
+if face_cascade:
+    print("✓ 人脸检测器加载成功")
+else:
+    print("⚠️  人脸检测已启用兼容模式")
 
-def detect_face(img):
-    if face_cascade is None:
-        return True  # 兼容模式：直接通过
-    
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    return len(faces) > 0
+def extract_lbp_features(image, num_points=24, radius=3):
+    """提取 LBP（局部二值模式）特征 - 纹理特征"""
+    try:
+        from skimage.feature import local_binary_pattern
+        lbp = local_binary_pattern(image, num_points, radius, method='uniform')
+        hist, _ = np.histogram(lbp.ravel(), bins=np.arange(0, num_points + 3), range=(0, num_points + 2))
+        hist = hist.astype("float")
+        hist /= (hist.sum() + 1e-7)
+        return hist
+    except ImportError:
+        return np.array([])
+
+def extract_hog_features(image):
+    """提取 HOG（方向梯度直方图）特征 - 形状特征"""
+    try:
+        from skimage.feature import hog
+        features = hog(image, orientations=9, pixels_per_cell=(8, 8),
+                       cells_per_block=(2, 2), visualize=False, feature_vector=True)
+        return features
+    except ImportError:
+        return np.array([])
+
+def preprocess_face(face_img, target_size=(128, 128)):
+    """预处理人脸图像"""
+    face_resized = cv2.resize(face_img, target_size)
+    face_eq = cv2.equalizeHist(face_resized)
+    face_blur = cv2.GaussianBlur(face_eq, (3, 3), 0)
+    return face_blur
 
 def extract_face_encoding(image_data):
     """
-    从 base64 图片中提取人脸特征
-    
-    Args:
-        image_data: base64 编码的图片数据
-    
-    Returns:
-        tuple: (success: bool, result: list/str)
-               success 为 True 时，result 是 128 维特征向量列表
-               success 为 False 时，result 是错误信息
+    从 base64 图片中提取人脸特征（高级版）
+    使用 LBP + HOG + 像素特征组合，大幅提高准确率
     """
     try:
-        import base64
-        from io import BytesIO
-        from PIL import Image
-        
-        # 解码 base64 图片
         header, image_data = image_data.split(',')
         image_bytes = base64.b64decode(image_data)
-        
-        # 转换为 OpenCV 图像
         image = Image.open(BytesIO(image_bytes))
         img = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         
-        # 人脸检测
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
         if face_cascade is not None:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            faces = face_cascade.detectMultiScale(
+                gray, 
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(80, 80),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
             
             if len(faces) == 0:
-                return False, "未检测到人脸，请确保面部在摄像头范围内"
+                return False, "未检测到人脸，请确保面部正对摄像头、光线充足"
             if len(faces) > 1:
                 return False, "检测到多张人脸，请确保只有一个人"
             
-            # 提取人脸区域
             x, y, w, h = faces[0]
+            padding = int(max(w, h) * 0.3)
+            x = max(0, x - padding)
+            y = max(0, y - padding)
+            w = min(gray.shape[1] - x, w + 2 * padding)
+            h = min(gray.shape[0] - y, h + 2 * padding)
             face_roi = gray[y:y+h, x:x+w]
         else:
-            # 兼容模式：使用整个图像
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            # 计算图像尺寸的 1/2 作为人脸区域（简单处理）
             h, w = gray.shape
-            size = min(w, h) // 2
+            size = min(w, h)
             x = (w - size) // 2
             y = (h - size) // 2
             face_roi = gray[y:y+size, x:x+size]
         
-        # 调整大小为 128x128
-        face_resized = cv2.resize(face_roi, (128, 128))
+        face_processed = preprocess_face(face_roi, (128, 128))
         
-        # 计算简单的特征向量（归一化像素值）
-        encoding = face_resized.flatten() / 255.0
+        features = []
         
-        # 确保是 128 维向量
-        if len(encoding) > 128:
-            encoding = encoding[:128]
-        elif len(encoding) < 128:
-            encoding = np.pad(encoding, (0, 128 - len(encoding)), 'constant')
+        pixel_features = face_processed.flatten() / 255.0
+        pixel_features = pixel_features[::4]
+        features.extend(pixel_features.tolist())
         
-        # 转换为列表便于 JSON 序列化
-        encoding_list = encoding.tolist()
-        return True, encoding_list
+        lbp_features = extract_lbp_features(face_processed)
+        if len(lbp_features) > 0:
+            features.extend(lbp_features.tolist())
+        
+        hog_features = extract_hog_features(face_processed)
+        if len(hog_features) > 0:
+            hog_downsampled = hog_features[::2]
+            features.extend(hog_downsampled.tolist())
+        
+        features = np.array(features)
+        if np.std(features) > 0:
+            features = (features - np.mean(features)) / np.std(features)
+        
+        features = features.tolist()
+        
+        if len(features) < 256:
+            features.extend([0.0] * (256 - len(features)))
+        
+        features = features[:512]
+        
+        return True, features
         
     except Exception as e:
         return False, f"人脸特征提取失败: {str(e)}"
 
-def compare_faces(known_encoding, unknown_encoding, tolerance=0.8):
+def compare_faces(known_encoding, unknown_encoding, tolerance=0.5):
     """
-    比对人脸特征向量
-    
-    Args:
-        known_encoding: 已注册的人脸特征（列表或numpy数组）
-        unknown_encoding: 待验证的人脸特征（列表或numpy数组）
-        tolerance: 容忍度，越小越严格（默认0.8，建议范围0.7-0.9）
-    
-    Returns:
-        tuple: (is_match: bool, distance: float)
-               is_match: 是否匹配
-               distance: 欧氏距离（越小越相似）
+    比对人脸特征向量（使用余弦相似度）
+    tolerance: 越小越严格，建议 0.4-0.6
     """
     try:
-        # 转换为 numpy 数组
         if isinstance(known_encoding, str):
             known_encoding = json.loads(known_encoding)
         if isinstance(unknown_encoding, str):
             unknown_encoding = json.loads(unknown_encoding)
             
-        known_encoding = np.array(known_encoding)
-        unknown_encoding = np.array(unknown_encoding)
+        known = np.array(known_encoding)
+        unknown = np.array(unknown_encoding)
         
-        # 计算欧氏距离
-        distance = np.linalg.norm(known_encoding - unknown_encoding)
+        if len(known) != len(unknown):
+            min_len = min(len(known), len(unknown))
+            known = known[:min_len]
+            unknown = unknown[:min_len]
         
-        # 判断是否匹配（距离小于容忍度）
+        dot_product = np.dot(known, unknown)
+        norm_known = np.linalg.norm(known)
+        norm_unknown = np.linalg.norm(unknown)
+        
+        if norm_known == 0 or norm_unknown == 0:
+            return False, float('inf')
+        
+        cosine_similarity = dot_product / (norm_known * norm_unknown)
+        distance = 1 - cosine_similarity
+        
         is_match = distance <= tolerance
         
         return is_match, float(distance)
@@ -130,18 +163,9 @@ def compare_faces(known_encoding, unknown_encoding, tolerance=0.8):
     except Exception as e:
         return False, float('inf')
 
-def find_best_match(unknown_encoding, user_encodings, tolerance=0.8):
+def find_best_match(unknown_encoding, user_encodings, tolerance=0.5):
     """
     在多个用户中找出最佳匹配
-    
-    Args:
-        unknown_encoding: 待验证的人脸特征
-        user_encodings: 用户列表，每个用户包含 id, username, face_encoding
-        tolerance: 容忍度
-    
-    Returns:
-        tuple: (matched_user: dict/None, distance: float, debug_info: dict)
-               找到匹配返回用户信息，未找到返回 None
     """
     best_match = None
     best_distance = float('inf')
@@ -159,25 +183,9 @@ def find_best_match(unknown_encoding, user_encodings, tolerance=0.8):
         
         debug_info[user['username']] = round(distance, 4)
         
-        if is_match and distance < best_distance:
+        if distance < best_distance:
             best_distance = distance
-            best_match = user
-    
-    # 如果没有找到匹配，尝试使用更宽松的容忍度
-    if not best_match and user_encodings:
-        print("⚠️  未找到匹配，尝试使用更宽松的容忍度...")
-        for user in user_encodings:
-            if not user.get('face_encoding'):
-                continue
-                
-            is_match, distance = compare_faces(
-                user['face_encoding'], 
-                unknown_encoding, 
-                tolerance=0.9
-            )
-            
-            if is_match and distance < best_distance:
-                best_distance = distance
+            if is_match:
                 best_match = user
     
     debug_info['best_distance'] = round(best_distance, 4)

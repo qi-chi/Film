@@ -188,6 +188,7 @@ def register():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
+        face_encoding = request.form.get('face_encoding')
         
         if User.query.filter_by(username=username).first():
             flash('用户名已存在，请选择其他用户名。', 'danger')
@@ -195,7 +196,8 @@ def register():
             
         user = User(
             username=username,
-            password_hash=generate_password_hash(password)
+            password_hash=generate_password_hash(password),
+            face_encoding=face_encoding if face_encoding else None
         )
         db.session.add(user)
         db.session.commit()
@@ -253,25 +255,32 @@ def face_login():
         return jsonify({'success': False, 'message': '系统中暂无人脸登录用户，请先注册人脸'})
     
     user_list = [{'id': u.id, 'username': u.username, 'face_encoding': u.face_encoding} for u in users]
-    matched_user, distance, debug_info = find_best_match(result, user_list, tolerance=1.0)
+    
+    matched_user, distance, debug_info = find_best_match(result, user_list, tolerance=0.22)
     
     print(f"人脸匹配调试信息: {debug_info}")
     print(f"最佳匹配距离: {distance}")
     
-    if matched_user:
+    # 验证：距离必须小于0.22
+    if matched_user and distance < 0.22:
         user = User.query.get(matched_user['id'])
         login_user(user)
         return jsonify({'success': True, 'message': '人脸识别登录成功！'})
     else:
-        return jsonify({'success': False, 'message': '人脸识别失败，请确保光线充足、正对摄像头'})
+        return jsonify({'success': False, 'message': '人脸识别失败，未找到匹配用户'})
 
-@app.route('/api/face/register', methods=['POST'])
-def face_register():
+@app.route('/api/face/check', methods=['GET'])
+@login_required
+def check_face():
+    return jsonify({'has_face': current_user.face_encoding is not None})
+
+@app.route('/api/face/register_new', methods=['POST'])
+def face_register_new():
+    """注册页面使用 - 不需要登录，返回特征编码"""
     from face_auth import extract_face_encoding, encoding_to_json
     
     data = request.get_json()
     image_data = data.get('image')
-    username = data.get('username')
     
     if not image_data:
         return jsonify({'success': False, 'message': '未收到图像数据'})
@@ -280,11 +289,29 @@ def face_register():
     if not success:
         return jsonify({'success': False, 'message': result})
     
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return jsonify({'success': False, 'message': '用户不存在'})
+    return jsonify({
+        'success': True, 
+        'message': '人脸识别成功！',
+        'encoding': encoding_to_json(result)
+    })
+
+@app.route('/api/face/register', methods=['POST'])
+@login_required
+def face_register():
+    from face_auth import extract_face_encoding, encoding_to_json
     
-    user.face_encoding = encoding_to_json(result)
+    data = request.get_json()
+    image_data = data.get('image')
+    
+    if not image_data:
+        return jsonify({'success': False, 'message': '未收到图像数据'})
+    
+    success, result = extract_face_encoding(image_data)
+    if not success:
+        return jsonify({'success': False, 'message': result})
+    
+    # 已登录用户直接更新人脸
+    current_user.face_encoding = encoding_to_json(result)
     db.session.commit()
     
     return jsonify({'success': True, 'message': '人脸注册成功！'})
@@ -1126,6 +1153,7 @@ class Seat(db.Model):
     hall = db.Column(db.String(20), default="1号厅")
     show_time = db.Column(db.String(20), default="10:00")
     is_sold = db.Column(db.Boolean, default=False)
+    price = db.Column(db.Float, default=50.0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

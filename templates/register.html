@@ -389,13 +389,23 @@ async function captureAndRegisterFace() {
         // 转换为 base64
         let imageData = faceRegisterCanvas.toDataURL('image/jpeg', 0.9);
         
+        // 获取用户名
+        let usernameInput = document.querySelector('input[name="username"]');
+        let username = usernameInput ? usernameInput.value : '';
+        
+        if (!username) {
+            setFaceRegisterStatus('请先输入用户名', 'error');
+            faceRegisterCaptureBtn.disabled = false;
+            return;
+        }
+        
         // 发送到服务器进行人脸特征提取
-        let response = await fetch('/api/face/register', {
+        let response = await fetch('/api/face/register_new', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ image: imageData })
+            body: JSON.stringify({ image: imageData, username: username })
         });
         
         let result = await response.json();
