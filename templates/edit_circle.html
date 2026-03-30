@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}编辑圈子 - 光影推荐{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header" style="background-color: transparent; border-bottom: none;">
+                    <h2 class="card-title" style="background: linear-gradient(90deg, #ff9f43, #ff6b35); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: bold;">编辑圈子</h2>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('edit_circle', circle_id=circle.id) }}" method="POST" enctype="multipart/form-data">
+                        <div class="mb-4">
+                            <label for="name" class="form-label">圈子名称</label>
+                            <input type="text" class="form-control" id="name" name="name" value="{{ circle.name }}" required>
+                        </div>
+                        <div class="mb-4">
+                            <label for="description" class="form-label">圈子描述</label>
+                            <textarea class="form-control" id="description" name="description" rows="4" required>{{ circle.description }}</textarea>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label">圈子背景</label>
+                            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                                <button type="button" id="color-option" class="btn {% if not circle.background_image %}btn-warning{% else %}btn-secondary{% endif %}" style="flex: 1;">颜色渐变</button>
+                                <button type="button" id="image-option" class="btn {% if circle.background_image %}btn-warning{% else %}btn-secondary{% endif %}" style="flex: 1;">自定义图片</button>
+                            </div>
+                            
+                            <!-- 颜色选择区域 -->
+                            <div id="color-section" class="mb-4 {% if circle.background_image %}d-none{% endif %}">
+                                <div style="padding: 15px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; background-color: #9c27b0; cursor: pointer;" onclick="document.getElementById('background_color').click();">
+                                    <span style="color: white; font-weight: 500;">点击选择颜色</span>
+                                    <div style="width: 32px; height: 32px; border-radius: 4px; background-color: #9c27b0; border: 2px solid rgba(255, 255, 255, 0.3);"></div>
+                                    <input type="color" id="background_color" name="background_color" value="#9c27b0" style="display: none;">
+                                </div>
+                            </div>
+                            <script>
+                                // 设置颜色选择器和预览区域的初始值
+                                document.addEventListener('DOMContentLoaded', function() {
+                                    const bgColor = '{{ circle.background_color or "#9c27b0" }}';
+                                    const colorInput = document.getElementById('background_color');
+                                    const colorPreview = document.querySelector('#color-section div');
+                                    const colorSquare = colorPreview.querySelector('div');
+                                    if (colorInput && colorPreview && colorSquare) {
+                                        colorInput.value = bgColor;
+                                        colorPreview.style.backgroundColor = bgColor;
+                                        colorSquare.style.backgroundColor = bgColor;
+                                        
+                                        // 监听颜色变化
+                                        colorInput.addEventListener('input', function() {
+                                            colorPreview.style.backgroundColor = this.value;
+                                            colorSquare.style.backgroundColor = this.value;
+                                        });
+                                    }
+                                });
+                            </script>
+                            
+                            <!-- 图片上传区域 -->
+                            <div id="image-section" class="mb-4 {% if not circle.background_image %}d-none{% endif %}">
+                                <div style="border: 2px dashed #ff9f43; border-radius: 4px; padding: 20px; text-align: center; cursor: pointer; margin-bottom: 15px;" onclick="document.getElementById('background_image').click();">
+                                    <input type="file" id="background_image" name="background_image" accept="image/*" style="display: none;">
+                                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                                        <i class="fas fa-upload"></i>
+                                        <span>点击上传背景图片</span>
+                                    </div>
+                                </div>
+                                {% if circle.background_image %}
+                                <div class="mt-2">
+                                    <img src="{{ url_for('static', filename=circle.background_image) }}" alt="当前背景图片" style="max-width: 100%; border-radius: 4px;">
+                                    <button type="button" class="btn btn-danger mt-2" onclick="removeImage()">
+                                        <i class="fas fa-trash me-1"></i> 移除图片
+                                    </button>
+                                </div>
+                                {% endif %}
+                                <p class="text-muted text-sm">建议上传尺寸为400x300的图片，支持jpg、png格式</p>
+                            </div>
+                        </div>
+                        
+                        <script>
+                            // 切换背景选项
+                            document.getElementById('color-option').addEventListener('click', function() {
+                                document.getElementById('color-option').classList.remove('btn-secondary');
+                                document.getElementById('color-option').classList.add('btn-warning');
+                                document.getElementById('image-option').classList.remove('btn-warning');
+                                document.getElementById('image-option').classList.add('btn-secondary');
+                                document.getElementById('color-section').classList.remove('d-none');
+                                document.getElementById('image-section').classList.add('d-none');
+                                document.getElementById('background_image').value = '';
+                            });
+                            
+                            document.getElementById('image-option').addEventListener('click', function() {
+                                document.getElementById('image-option').classList.remove('btn-secondary');
+                                document.getElementById('image-option').classList.add('btn-warning');
+                                document.getElementById('color-option').classList.remove('btn-warning');
+                                document.getElementById('color-option').classList.add('btn-secondary');
+                                document.getElementById('image-section').classList.remove('d-none');
+                                document.getElementById('color-section').classList.add('d-none');
+                            });
+                            
+                            // 移除图片
+                            function removeImage() {
+                                document.getElementById('background_image').value = '';
+                                document.getElementById('image-section').querySelector('img').parentElement.remove();
+                                document.getElementById('color-option').click();
+                            }
+                        </script>
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('circle_detail', circle_id=circle.id) }}" class="btn btn-secondary">取消</a>
+                            <button type="submit" class="btn btn-primary">保存修改</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

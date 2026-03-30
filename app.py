@@ -572,5 +572,310 @@ def ai_chat():
 
     return jsonify({'reply': reply})
 
+# 11. 圈子功能
+from models import Circle, CircleMember, CirclePost, CircleComment
+
+@app.route('/circles')
+@login_required
+def circles():
+    search_query = request.args.get('q', '')
+    filter_type = request.args.get('filter', '')
+    
+    query = Circle.query
+    if search_query:
+        query = query.filter(Circle.name.ilike(f'%{search_query}%') | Circle.description.ilike(f'%{search_query}%'))
+    
+    # 根据过滤类型筛选圈子
+    if filter_type == 'joined':
+        # 获取用户加入的圈子ID
+        joined_circle_ids = [cm.circle_id for cm in CircleMember.query.filter_by(user_id=current_user.id).all()]
+        query = query.filter(Circle.id.in_(joined_circle_ids))
+    elif filter_type == 'created':
+        # 获取用户创建的圈子
+        query = query.filter(Circle.created_by == current_user.id)
+    
+    # 获取所有圈子
+    all_circles = query.all()
+    
+    # 计算每个圈子的成员数量并排序
+    all_circles.sort(key=lambda circle: len(circle.members), reverse=True)
+    
+    # 获取用户加入的圈子
+    user_circles = set([cm.circle_id for cm in CircleMember.query.filter_by(user_id=current_user.id).all()])
+    
+    return render_template('circles.html', circles=all_circles, user_circles=user_circles, search_query=search_query, filter_type=filter_type)
+
+@app.route('/create_circle', methods=['GET', 'POST'])
+@login_required
+def create_circle():
+    if request.method == 'POST':
+        name = request.form.get('name')
+        description = request.form.get('description')
+        background_color = request.form.get('background_color', '#f0f0f0')
+        
+        if not name or not description:
+            flash('请填写圈子名称和描述', 'danger')
+            return redirect(url_for('create_circle'))
+        
+        # 检查圈子名称是否已存在
+        if Circle.query.filter_by(name=name).first():
+            flash('圈子名称已存在', 'danger')
+            return redirect(url_for('create_circle'))
+        
+        # 处理背景图片上传
+        background_image = None
+        if 'background_image' in request.files:
+            file = request.files['background_image']
+            if file and file.filename:
+                # 生成唯一文件名
+                filename = secure_filename(f"circle_bg_{uuid.uuid4()}_{file.filename}")
+                # 确保圈子背景图片目录存在
+                bg_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'circle_backgrounds')
+                os.makedirs(bg_folder, exist_ok=True)
+                # 保存文件
+                file.save(os.path.join(bg_folder, filename))
+                # 存储相对路径
+                background_image = f"uploads/avatars/circle_backgrounds/{filename}"
+        
+        # 创建圈子
+        circle = Circle(
+            name=name, 
+            description=description, 
+            created_by=current_user.id,
+            background_color=background_color,
+            background_image=background_image
+        )
+        db.session.add(circle)
+        db.session.commit()
+        
+        # 自动将创建者加入圈子
+        member = CircleMember(user_id=current_user.id, circle_id=circle.id)
+        db.session.add(member)
+        db.session.commit()
+        
+        flash('圈子创建成功！', 'success')
+        return redirect(url_for('circles'))
+    
+    return render_template('create_circle.html')
+
+@app.route('/join_circle/<int:circle_id>', methods=['POST'])
+@login_required
+def join_circle(circle_id):
+    # 检查是否已经加入
+    existing = CircleMember.query.filter_by(user_id=current_user.id, circle_id=circle_id).first()
+    if existing:
+        flash('你已经加入了这个圈子', 'info')
+    else:
+        member = CircleMember(user_id=current_user.id, circle_id=circle_id)
+        db.session.add(member)
+        db.session.commit()
+        flash('加入圈子成功！', 'success')
+    return redirect(url_for('circles'))
+
+@app.route('/leave_circle/<int:circle_id>', methods=['POST'])
+@login_required
+def leave_circle(circle_id):
+    member = CircleMember.query.filter_by(user_id=current_user.id, circle_id=circle_id).first()
+    if member:
+        db.session.delete(member)
+        db.session.commit()
+        flash('退出圈子成功！', 'success')
+    else:
+        flash('你没有加入这个圈子', 'info')
+    return redirect(url_for('circles'))
+
+@app.route('/circle/<int:circle_id>', methods=['GET', 'POST'])
+@login_required
+def circle_detail(circle_id):
+    circle = Circle.query.get_or_404(circle_id)
+    
+    # 检查用户是否加入了圈子
+    is_member = CircleMember.query.filter_by(user_id=current_user.id, circle_id=circle_id).first() is not None
+    
+    # 处理发表帖子
+    if request.method == 'POST' and is_member:
+        content = request.form.get('content')
+        if content:
+            # 处理图片上传
+            image_url = None
+            if 'post_image' in request.files:
+                file = request.files['post_image']
+                if file and file.filename:
+                    # 生成唯一文件名
+                    filename = secure_filename(f"circle_post_{uuid.uuid4()}_{file.filename}")
+                    # 确保圈子帖子图片目录存在
+                    post_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'circle_posts')
+                    os.makedirs(post_folder, exist_ok=True)
+                    # 保存文件
+                    file.save(os.path.join(post_folder, filename))
+                    # 存储相对路径
+                    image_url = f"uploads/avatars/circle_posts/{filename}"
+            
+            post = CirclePost(user_id=current_user.id, circle_id=circle_id, content=content, image_url=image_url)
+            db.session.add(post)
+            db.session.commit()
+            flash('帖子发表成功！', 'success')
+            return redirect(url_for('circle_detail', circle_id=circle_id))
+    
+    # 获取帖子列表
+    posts = CirclePost.query.filter_by(circle_id=circle_id).order_by(CirclePost.created_at.desc()).all()
+    
+    return render_template('circle_detail.html', circle=circle, is_member=is_member, posts=posts)
+
+@app.route('/comment_post/<int:post_id>', methods=['POST'])
+@login_required
+def comment_post(post_id):
+    post = CirclePost.query.get_or_404(post_id)
+    
+    # 检查用户是否加入了圈子
+    is_member = CircleMember.query.filter_by(user_id=current_user.id, circle_id=post.circle_id).first() is not None
+    if not is_member:
+        flash('请先加入圈子再发表评论', 'danger')
+        return redirect(url_for('circle_detail', circle_id=post.circle_id))
+    
+    content = request.form.get('content')
+    parent_id = request.form.get('parent_id', type=int)
+    
+    if content:
+        comment = CircleComment(user_id=current_user.id, post_id=post_id, parent_id=parent_id, content=content)
+        db.session.add(comment)
+        db.session.commit()
+        flash('评论发表成功！', 'success')
+    
+    return redirect(url_for('circle_detail', circle_id=post.circle_id))
+
+@app.route('/delete_comment/<int:comment_id>', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    comment = CircleComment.query.get_or_404(comment_id)
+    
+    # 检查用户是否是评论的作者
+    if current_user.id != comment.user_id:
+        flash('只有评论的作者可以删除评论', 'danger')
+        return redirect(url_for('circle_detail', circle_id=comment.post.circle_id))
+    
+    # 保存圈子ID，用于删除后重定向
+    circle_id = comment.post.circle_id
+    
+    # 删除评论
+    db.session.delete(comment)
+    db.session.commit()
+    
+    flash('评论已撤回', 'success')
+    return redirect(url_for('circle_detail', circle_id=circle_id))
+
+@app.route('/delete_post/<int:post_id>', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = CirclePost.query.get_or_404(post_id)
+    
+    # 检查用户是否是帖子的作者
+    if current_user.id != post.user_id:
+        flash('只有帖子的作者可以删除帖子', 'danger')
+        return redirect(url_for('circle_detail', circle_id=post.circle_id))
+    
+    # 保存圈子ID，用于删除后重定向
+    circle_id = post.circle_id
+    
+    # 删除帖子的所有评论
+    for comment in post.comments:
+        db.session.delete(comment)
+    
+    # 删除帖子的图片
+    if post.image_url:
+        # 构建完整的图片路径
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], post.image_url.replace('uploads/avatars/', ''))
+        if os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except Exception as e:
+                print(f"删除图片失败: {e}")
+    
+    # 删除帖子
+    db.session.delete(post)
+    db.session.commit()
+    
+    flash('帖子已撤回', 'success')
+    return redirect(url_for('circle_detail', circle_id=circle_id))
+
+@app.route('/edit_circle/<int:circle_id>', methods=['GET', 'POST'])
+@login_required
+def edit_circle(circle_id):
+    circle = Circle.query.get_or_404(circle_id)
+    
+    # 检查用户是否是圈子创建者
+    if current_user.id != circle.created_by:
+        flash('只有圈子创建者可以编辑圈子', 'danger')
+        return redirect(url_for('circle_detail', circle_id=circle_id))
+    
+    if request.method == 'POST':
+        name = request.form.get('name')
+        description = request.form.get('description')
+        background_color = request.form.get('background_color', '#f0f0f0')
+        
+        if not name or not description:
+            flash('请填写圈子名称和描述', 'danger')
+            return redirect(url_for('edit_circle', circle_id=circle_id))
+        
+        # 检查圈子名称是否已存在（排除当前圈子）
+        existing_circle = Circle.query.filter(Circle.name == name, Circle.id != circle_id).first()
+        if existing_circle:
+            flash('圈子名称已存在', 'danger')
+            return redirect(url_for('edit_circle', circle_id=circle_id))
+        
+        # 处理背景图片上传
+        if 'background_image' in request.files:
+            file = request.files['background_image']
+            if file and file.filename:
+                # 生成唯一文件名
+                filename = secure_filename(f"circle_bg_{uuid.uuid4()}_{file.filename}")
+                # 确保圈子背景图片目录存在
+                bg_folder = os.path.join(app.config['UPLOAD_FOLDER'], 'circle_backgrounds')
+                os.makedirs(bg_folder, exist_ok=True)
+                # 保存文件
+                file.save(os.path.join(bg_folder, filename))
+                # 存储相对路径
+                circle.background_image = f"uploads/avatars/circle_backgrounds/{filename}"
+            else:
+                # 如果没有选择文件，且用户选择了颜色渐变，清除背景图片
+                circle.background_image = None
+        
+        # 更新圈子信息
+        circle.name = name
+        circle.description = description
+        circle.background_color = background_color
+        
+        db.session.commit()
+        flash('圈子编辑成功！', 'success')
+        return redirect(url_for('circle_detail', circle_id=circle_id))
+    
+    return render_template('edit_circle.html', circle=circle)
+
+@app.route('/delete_circle/<int:circle_id>', methods=['POST'])
+@login_required
+def delete_circle(circle_id):
+    circle = Circle.query.get_or_404(circle_id)
+    
+    # 检查用户是否是圈子创建者
+    if current_user.id != circle.created_by:
+        flash('只有圈子创建者可以删除圈子', 'danger')
+        return redirect(url_for('circle_detail', circle_id=circle_id))
+    
+    # 删除圈子相关的所有数据
+    # 删除圈子评论
+    for post in circle.posts:
+        for comment in post.comments:
+            db.session.delete(comment)
+        db.session.delete(post)
+    # 删除圈子成员
+    for member in circle.members:
+        db.session.delete(member)
+    # 删除圈子本身
+    db.session.delete(circle)
+    db.session.commit()
+    
+    flash('圈子删除成功！', 'success')
+    return redirect(url_for('circles'))
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

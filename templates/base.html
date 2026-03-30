@@ -9,6 +9,7 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <!-- Custom CSS -->
+    {% block head %}{% endblock %}
     <style>
         :root {
             --primary-bg: #0f0c29; /* 深靛蓝渐变起点 */
@@ -409,6 +410,7 @@
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('upcoming') }}">待映</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('recommendations') }}">智能推荐</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('visualize') }}">数据洞察</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{{ url_for('circles') }}">小论坛</a></li>
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav ms-auto align-items-center">
