@@ -1,7 +1,9 @@
+<!DOCTYPE html>
 {% extends "base.html" %}
 {% block title %}个人中心 - 光影推荐{% endblock %}
 {% block content %}
 <div class="row mt-4 mb-4">
+    
     <div class="col-12 text-center">
         <h2 class="mb-0 fw-bold text-white"><i class="fas fa-user-circle me-2" style="color: var(--accent-color);"></i>个人中心</h2>
         <p class="text-muted mt-2">完善您的特征信息，让深度学习模型更懂您</p>
@@ -13,7 +15,7 @@
     <div class="col-md-4">
         <div class="card shadow-lg text-center p-4 border-0 h-100" style="background: rgba(255,255,255,0.03); border-radius: 20px;">
             <div class="mb-4 position-relative d-inline-block mx-auto" id="avatar-container">
-                <img src="{{ current_user.avatar or 'https://ui-avatars.com/api/?name=' + current_user.username + '&background=ff9f43&color=000&size=150' }}" 
+                <img src="{% if current_user.avatar %}{{ url_for('static', filename='uploads/avatars/' + current_user.avatar) }}{% else %}https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=150{% endif %}" 
      class="rounded-circle shadow-lg border border-3 border-dark" 
      alt="Avatar" id="avatar-img" 
      style="cursor: pointer; width: 150px; height: 150px; object-fit: cover;">
@@ -29,6 +31,9 @@
     </a>
                 <a href="{{ url_for('favorites') }}" class="btn btn-outline-light rounded-pill py-2">
                     <i class="fas fa-heart me-2 text-danger"></i>我的收藏
+                </a>
+                <a href="{{ url_for('my_comments') }}" class="btn btn-outline-light rounded-pill py-2">
+                    <i class="fas fa-comments me-2" style="color: var(--accent-color);"></i>我的评论
                 </a>
             </div>
         </div>
@@ -64,9 +69,9 @@
                         <label class="col-sm-3 col-form-label text-md-end text-light fw-bold">性别 <i class="fas fa-info-circle text-warning ms-1" title="重要推荐特征"></i></label>
                         <div class="col-sm-9">
                             <select name="gender" class="form-select bg-dark text-light border-secondary rounded-pill px-4 py-2">
-                                <option value="" {% if not current_user.gender %}selected{% endif %}>保密</option>
-                                <option value="Male" {% if current_user.gender == 'Male' %}selected{% endif %}>男</option>
-                                <option value="Female" {% if current_user.gender == 'Female' %}selected{% endif %}>女</option>
+                                <option value="" {% if not current_user.gender %}selected="selected"{% endif %}>保密</option>
+                                <option value="Male" {% if current_user.gender == 'Male' %}selected="selected"{% endif %}>男</option>
+                                <option value="Female" {% if current_user.gender == 'Female' %}selected="selected"{% endif %}>女</option>
                             </select>
                         </div>
                     </div>
@@ -84,15 +89,52 @@
 </div>
 
 <!-- 浮动菜单 -->
-<div id="avatar-menu" style="display: none; position: absolute; background: #1e1e2f; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 8px 0; min-width: 120px; z-index: 1000;">
+<div id="avatar-menu" style="display: none; position: absolute; background: #1e1e2f; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); padding: 8px 0; min-width: 160px; z-index: 1000;">
     <div class="avatar-menu-item" data-action="view">👁️ 查看头像</div>
     <div class="avatar-menu-item" data-action="change">📷 更换头像</div>
+    <div class="avatar-menu-item" data-action="face" id="face-menu-item">
+        <i class="fas fa-face-viewfinder" style="width: 20px;"></i> <span id="face-menu-text">注册人脸登录</span>
+    </div>
 </div>
 
 <!-- 隐藏的文件输入 -->
 <input type="file" id="avatar-upload" accept="image/jpeg,image/png,image/gif" style="display: none;">
 
+<!-- 人脸注册模态框 -->
+<div id="face-modal" style="display: none; position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85); z-index: 3000; align-items: center; justify-content: center;">
+    <div style="background: #1e1e2f; border-radius: 20px; padding: 30px; max-width: 450px; width: 90%; text-align: center; border: 1px solid rgba(255,255,255,0.1);">
+        <h4 class="text-white mb-3"><i class="fas fa-face-viewfinder me-2" style="color: var(--accent-color);"></i>注册人脸登录</h4>
+        <p class="text-muted mb-4">请面对摄像头，我们将记录您的人脸特征用于快速登录</p>
+        
+        <div id="face-camera-container" style="position: relative; width: 280px; height: 280px; margin: 0 auto 20px; border-radius: 50%; overflow: hidden; border: 3px solid rgba(255,159,67,0.3); background: #0a0a0f;">
+            <video id="face-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
+            <canvas id="face-canvas" width="280" height="280" style="display: none;"></canvas>
+            <div id="face-placeholder" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.4);">
+                <i class="fas fa-camera" style="font-size: 48px; display: block; margin-bottom: 10px;"></i>
+                <span>点击开启摄像头</span>
+            </div>
+            <div id="face-scan-line" style="position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent-color), transparent); animation: scan 2s linear infinite; opacity: 0;"></div>
+        </div>
+        
+        <div id="face-status" style="min-height: 24px; margin-bottom: 15px; font-weight: 500;"></div>
+        
+        <button id="face-start-btn" class="btn btn-warning rounded-pill px-4 py-2 fw-bold text-dark" onclick="startFaceCamera()">
+            <i class="fas fa-video me-2"></i>开启摄像头
+        </button>
+        <button id="face-capture-btn" class="btn btn-success rounded-pill px-4 py-2 fw-bold" onclick="captureAndRegisterFace()" style="display: none;">
+            <i class="fas fa-fingerprint me-2"></i>录制人脸
+        </button>
+        <button class="btn btn-outline-secondary rounded-pill px-4 py-2 ms-2" onclick="closeFaceModal()">
+            取消
+        </button>
+    </div>
+</div>
+
 <style>
+@keyframes scan {
+    0% { top: 0; }
+    100% { top: 100%; }
+}
 .avatar-menu-item {
     padding: 8px 16px;
     color: #fff;
@@ -101,6 +143,9 @@
 }
 .avatar-menu-item:hover {
     background: rgba(255,255,255,0.1);
+}
+.avatar-menu-item.registered {
+    color: #2ecc71;
 }
 </style>
 
@@ -111,13 +156,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const avatarMenu = document.getElementById('avatar-menu');
     const fileInput = document.getElementById('avatar-upload');
 
+    // 检查人脸注册状态
+    checkFaceStatus();
+
     // 显示菜单
     avatarImg.addEventListener('click', function(e) {
         e.stopPropagation();
         // 计算菜单位置
         const rect = avatarImg.getBoundingClientRect();
         avatarMenu.style.top = rect.bottom + window.scrollY + 8 + 'px';
-        avatarMenu.style.left = rect.left + window.scrollX + (rect.width / 2) - 60 + 'px';
+        avatarMenu.style.left = rect.left + window.scrollX + (rect.width / 2) - 80 + 'px';
         avatarMenu.style.display = 'block';
     });
 
@@ -145,6 +193,12 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('[data-action="change"]').addEventListener('click', function() {
         avatarMenu.style.display = 'none';
         fileInput.click();  // 触发文件选择
+    });
+
+    // 人脸注册
+    document.querySelector('[data-action="face"]').addEventListener('click', function() {
+        avatarMenu.style.display = 'none';
+        openFaceModal();
     });
 
     // 文件选择后自动上传
@@ -196,6 +250,166 @@ document.addEventListener('DOMContentLoaded', function() {
         // 清空 input，以便再次选择同一文件时触发 change
         fileInput.value = '';
     });
+});
+
+// ========== 人脸注册相关函数 ==========
+
+let faceStream = null;
+let faceVideo = document.getElementById('face-video');
+let faceCanvas = document.getElementById('face-canvas');
+let facePlaceholder = document.getElementById('face-placeholder');
+let faceScanLine = document.getElementById('face-scan-line');
+let faceStartBtn = document.getElementById('face-start-btn');
+let faceCaptureBtn = document.getElementById('face-capture-btn');
+let faceStatus = document.getElementById('face-status');
+let faceModal = document.getElementById('face-modal');
+
+// 检查人脸注册状态
+async function checkFaceStatus() {
+    try {
+        const response = await fetch('/api/face/check');
+        const data = await response.json();
+        const faceMenuItem = document.getElementById('face-menu-item');
+        const faceMenuText = document.getElementById('face-menu-text');
+        
+        if (data.has_face) {
+            faceMenuItem.classList.add('registered');
+            faceMenuText.textContent = '更新人脸数据 ✓';
+        } else {
+            faceMenuItem.classList.remove('registered');
+            faceMenuText.textContent = '注册人脸登录';
+        }
+    } catch (err) {
+        console.error('检查人脸状态失败:', err);
+    }
+}
+
+// 打开人脸注册模态框
+function openFaceModal() {
+    faceModal.style.display = 'flex';
+    resetFaceModal();
+}
+
+// 关闭人脸注册模态框
+function closeFaceModal() {
+    faceModal.style.display = 'none';
+    stopFaceCamera();
+}
+
+// 重置模态框状态
+function resetFaceModal() {
+    stopFaceCamera();
+    facePlaceholder.style.display = 'block';
+    faceVideo.style.display = 'none';
+    faceScanLine.style.opacity = '0';
+    faceStartBtn.style.display = 'inline-block';
+    faceCaptureBtn.style.display = 'none';
+    faceStartBtn.disabled = false;
+    faceCaptureBtn.disabled = false;
+    faceStatus.textContent = '';
+    faceStatus.style.color = '';
+}
+
+// 停止摄像头
+function stopFaceCamera() {
+    if (faceStream) {
+        faceStream.getTracks().forEach(track => track.stop());
+        faceStream = null;
+    }
+}
+
+// 开启摄像头
+async function startFaceCamera() {
+    try {
+        faceStatus.textContent = '正在启动摄像头...';
+        faceStatus.style.color = 'var(--accent-color)';
+        faceStartBtn.disabled = true;
+
+        faceStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user'
+            }
+        });
+
+        faceVideo.srcObject = faceStream;
+        facePlaceholder.style.display = 'none';
+        faceVideo.style.display = 'block';
+
+        faceStartBtn.style.display = 'none';
+        faceCaptureBtn.style.display = 'inline-block';
+
+        faceStatus.textContent = '摄像头已开启，请将面部对准圆形区域';
+        faceStatus.style.color = '#2ecc71';
+    } catch (err) {
+        console.error('摄像头启动失败:', err);
+        faceStatus.textContent = '无法访问摄像头，请检查权限设置';
+        faceStatus.style.color = '#e74c3c';
+        faceStartBtn.disabled = false;
+    }
+}
+
+// 捕获并注册人脸
+async function captureAndRegisterFace() {
+    if (!faceStream) {
+        faceStatus.textContent = '请先开启摄像头';
+        faceStatus.style.color = '#e74c3c';
+        return;
+    }
+
+    faceCaptureBtn.disabled = true;
+    faceScanLine.style.opacity = '1';
+    faceStatus.textContent = '正在处理...';
+    faceStatus.style.color = 'var(--accent-color)';
+
+    // 绘制视频帧到 canvas
+    let ctx = faceCanvas.getContext('2d');
+    ctx.drawImage(faceVideo, 0, 0, faceCanvas.width, faceCanvas.height);
+
+    // 转换为 base64
+    let imageData = faceCanvas.toDataURL('image/jpeg', 0.9);
+
+    try {
+        let response = await fetch('/api/face/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: imageData })
+        });
+
+        let result = await response.json();
+
+        if (result.success) {
+            faceStatus.textContent = result.message;
+            faceStatus.style.color = '#2ecc71';
+            // 更新菜单状态
+            checkFaceStatus();
+            // 2秒后关闭
+            setTimeout(() => {
+                closeFaceModal();
+            }, 2000);
+        } else {
+            faceStatus.textContent = result.message;
+            faceStatus.style.color = '#e74c3c';
+            faceCaptureBtn.disabled = false;
+            faceScanLine.style.opacity = '0';
+        }
+    } catch (err) {
+        console.error('注册请求失败:', err);
+        faceStatus.textContent = '人脸识别失败，请重试';
+        faceStatus.style.color = '#e74c3c';
+        faceCaptureBtn.disabled = false;
+        faceScanLine.style.opacity = '0';
+    }
+}
+
+// 点击模态框背景关闭
+faceModal.addEventListener('click', function(e) {
+    if (e.target === faceModal) {
+        closeFaceModal();
+    }
 });
 </script>
 

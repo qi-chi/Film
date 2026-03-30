@@ -416,7 +416,7 @@
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
                             <a class="nav-link d-flex align-items-center" href="{{ url_for('profile') }}">
-                                <img src="{{ current_user.avatar or 'https://ui-avatars.com/api/?name=' + current_user.username + '&background=ff9f43&color=000&size=32' }}" 
+                                <img src="{% if current_user.avatar %}{{ url_for('static', filename='uploads/avatars/' + current_user.avatar) }}{% else %}https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=32{% endif %}" 
      class="rounded-circle me-2" 
      style="width: 32px; height: 32px; object-fit: cover;" 
      alt="Avatar">
@@ -516,6 +516,7 @@
             body.innerHTML += `<div class="ai-message bot ai-typing" id="${typingId}"><span></span><span></span><span></span></div>`;
             body.scrollTop = body.scrollHeight;
 
+            // 调用后端 AI API
             fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -528,10 +529,11 @@
                 body.innerHTML += `<div class="ai-message bot">${data.reply}</div>`;
                 body.scrollTop = body.scrollHeight;
             })
-            .catch(() => {
+            .catch(err => {
                 const typing = document.getElementById(typingId);
                 if (typing) typing.remove();
-                body.innerHTML += `<div class="ai-message bot" style="color:#ff6b6b;">系统异常，请稍后再试。</div>`;
+                body.innerHTML += `<div class="ai-message bot">网络错误，请稍后重试</div>`;
+                body.scrollTop = body.scrollHeight;
             });
         }
     </script>
