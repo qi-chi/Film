@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}我的选座 - 个人中心{% endblock %}
+
+{% block content %}
+<style>
+    .booking-card {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 15px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+    }
+    .booking-poster {
+        width: 80px;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-right: 15px;
+    }
+    .booking-info {
+        flex: 1;
+    }
+    .booking-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 8px;
+    }
+    .booking-detail {
+        font-size: 0.85rem;
+        color: rgba(255,255,255,0.6);
+        margin-bottom: 4px;
+    }
+    .cancel-seat-btn {
+        background: #d32f2f;
+        color: #fff;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.8rem;
+    }
+    .cancel-seat-btn:hover {
+        background: #e53935;
+    }
+    .empty-bookings {
+        text-align: center;
+        padding: 80px 20px;
+        color: rgba(255,255,255,0.4);
+    }
+    .empty-bookings i {
+        font-size: 3rem;
+        margin-bottom: 15px;
+    }
+</style>
+
+<div class="container mt-5">
+    <h2 class="text-white mb-4">我的选座</h2>
+
+    {% if bookings %}
+        {% for booking in bookings %}
+        <div class="booking-card">
+            <img src="{{ booking.movie_poster }}" alt="{{ booking.movie_title }}" class="booking-poster">
+            <div class="booking-info">
+                <div class="booking-title">{{ booking.movie_title }}</div>
+                <div class="booking-detail">影厅：{{ booking.hall }}</div>
+                <div class="booking-detail">场次：{{ booking.show_time }}</div>
+                <div class="booking-detail">座位：{{ booking.seat }}</div>
+            </div>
+            <form action="{{ url_for('cancel_seat', seat_id=booking.seat_id) }}" method="post" onsubmit="return confirm('确定要取消该选座吗？')">
+                <button type="submit" class="cancel-seat-btn">取消选座</button>
+            </form>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-bookings">
+            <i class="fas fa-ticket-alt"></i>
+            <h5 class="text-white">暂无选座记录</h5>
+            <p>快去选座购票，锁定心仪座位吧～</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

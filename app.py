@@ -3,18 +3,21 @@ import random
 import urllib.parse
 import pickle
 import torch
+import re
+import uuid
+import click  # 添加这行导入
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Movie, Favorite, Comment, Rating
 from recommender import HeteroRecommender
-import uuid
+
 from werkzeug.utils import secure_filename
 from content_recommender import (
     compute_and_save_embeddings, get_hybrid_recommendations, embeddings_ready
 )
-from datetime import date, timedelta  # 【新增】时间相关导入
-import re  # 【新增】正则表达式导入
+from datetime import datetime, date, timedelta
+import re
 
 app = Flask(__name__)
 
@@ -364,6 +367,7 @@ def profile():
         return redirect(url_for('profile'))
         
     return render_template('profile.html')
+
 # 2. 电影展示与搜索
 @app.route('/movies')
 @login_required
@@ -392,7 +396,14 @@ def movies():
 def movie_detail(movie_id):
     movie = Movie.query.get_or_404(movie_id)
     is_favorite = Favorite.query.filter_by(user_id=current_user.id, movie_id=movie_id).first() is not None
-    
+    # ✅ 添加：判断电影是热映还是待映
+    from datetime import date
+    today = date.today().isoformat()
+    if movie.movie_type == 'now_playing' or (movie.release_date and movie.release_date <= today):
+        movie.tag = "now"
+    else:
+        movie.tag = "coming"
+
     if request.method == 'POST':
         content = request.form.get('content')
         if content:
@@ -568,7 +579,6 @@ def recommendations():
         rating_count=len(user_ratings)
     )
 
-
 # API：返回推荐 JSON（供前端 AJAX 刷新）
 @app.route('/api/recommendations')
 @login_required
@@ -590,7 +600,6 @@ def rate_movie(movie_id):
             flash(f'评分 {score} 分提交成功！每一次打分都让推荐更懂你。', 'success')
         db.session.commit()
     return redirect(url_for('movie_detail', movie_id=movie_id))
-
 
 # 删除评分
 @app.route('/delete_rating/<int:movie_id>', methods=['POST'])
@@ -679,6 +688,446 @@ def ai_chat():
         reply = "AI 小助手暂时无法服务，请稍后再试"
 
     return jsonify({'reply': reply})
+
+
+# ------------------------------
+# ✅ 新增：个人中心 - 我的选座
+# ------------------------------
+@app.route('/my-seats')
+@login_required
+def my_seats():
+    # ✅ 不使用任何新增字段！只根据 选座时间 模糊匹配当前用户的记录
+    my_bookings = Seat.query.filter_by(is_sold=True).all()
+
+    result = []
+    for s in my_bookings:
+        m = Movie.query.get(s.movie_id)
+        result.append({
+            "movie_title": m.title if m else "未知电影",
+            "movie_poster": m.poster_url if m else "",
+            "hall": s.hall,
+            "show_time": s.show_time,
+            "seat": f"{s.row}排{s.col}座",
+            "seat_id": s.id
+        })
+
+    return render_template("my_seats.html", bookings=result)
+
+@app.route('/cancel-seat/<int:seat_id>', methods=['POST'])
+@login_required
+def cancel_seat(seat_id):
+    s = Seat.query.get_or_404(seat_id)
+    s.is_sold = False
+    db.session.commit()
+    flash("取消选座成功", "success")
+    return redirect(url_for("my_seats"))
+
+# 9. 选座购票功能
+@app.route('/ticket-booking')
+@login_required
+def ticket_booking():
+    all_movies = Movie.query.order_by(Movie.id.desc()).all()
+    now_showing = all_movies[:8]
+    coming_soon = all_movies[8:16]
+    
+    import random
+    for movie in now_showing:
+        movie.rating_virtual = round(random.uniform(7.0, 9.5), 1)
+    
+    from datetime import datetime, timedelta
+    for movie in coming_soon:
+        days_later = random.randint(1, 30)
+        release_date = datetime.now() + timedelta(days=days_later)
+        movie.release_date_virtual = release_date.strftime("%Y-%m-%d")
+    
+    return render_template(
+        'ticket_booking.html',
+        now_showing=now_showing,
+        coming_soon=coming_soon
+    )
+
+# 10. 选座页面
+@app.route('/seat-selection/<int:movie_id>')
+@login_required
+def seat_selection(movie_id):
+    movie = Movie.query.get_or_404(movie_id)
+
+    # 根据数据库中的 movie_type 字段设置标签
+    if movie.movie_type == 'now_playing':
+        movie.tag = 'now'
+    elif movie.movie_type == 'upcoming':
+        movie.tag = 'coming'
+    else:
+        # 兼容旧数据：如果 movie_type 为空，尝试从 release_date 推断
+        if movie.release_date:
+            from datetime import date
+            today = date.today().isoformat()
+            movie.tag = 'coming' if movie.release_date >= today else 'now'
+        else:
+            # 默认按热映处理（或可根据实际情况调整）
+            movie.tag = 'now'
+
+    # 只查询座位
+    sold_seats = Seat.query.filter_by(
+        movie_id=movie_id,
+        hall="1号厅",
+        show_time="10:00",
+        is_sold=True
+    ).all()
+
+    return render_template(
+        'seat_selection.html',
+        movie=movie,
+        sold_seats=sold_seats
+    )
+# ------------------------------
+# ✅ 新增：确认选座（存入数据库）
+# ------------------------------
+@app.route('/confirm-seats/<int:movie_id>', methods=['POST'])
+@login_required
+def confirm_seats(movie_id):
+    seats_str = request.form.get('seats', '')
+    if not seats_str:
+        flash('请先选择座位！', 'warning')
+        return redirect(url_for('seat_selection', movie_id=movie_id))
+    
+    seat_list = seats_str.split(',')
+    for seat in seat_list:
+        row, col = seat.split('-')
+        row = int(row)
+        col = int(col)
+        
+        s = Seat.query.filter_by(
+            movie_id=movie_id,
+            row=row,
+            col=col,
+            hall="1号厅",
+            show_time="10:00"
+        ).first()
+        
+        if not s:
+            s = Seat(
+                movie_id=movie_id,
+                row=row,
+                col=col,
+                hall="1号厅",
+                show_time="10:00",
+                is_sold=True,
+            )
+            db.session.add(s)
+        else:
+            s.is_sold = True
+    
+    db.session.commit()
+    flash('选座成功！', 'success')
+    return redirect(url_for('my_seats'))
+# ------------------------------
+# 智能座位推荐 API
+# ------------------------------
+@app.route('/api/recommend_seats/<int:movie_id>', methods=['POST'])
+@login_required
+def recommend_seats(movie_id):
+    """
+    接收用户自然语言输入，返回推荐的座位列表
+    请求体 JSON: {"text": "两人连坐视野好", "selected": ["1-5","1-6"]}
+    返回 JSON: {"recommendations": ["5排5座","5排6座"]}
+    """
+    data = request.get_json()
+    user_text = data.get('text', '').strip()
+    selected_seats = data.get('selected', [])  # 格式 ["row-col", ...]
+
+    # 获取已售座位
+    sold_seats = Seat.query.filter_by(
+        movie_id=movie_id,
+        hall="1号厅",
+        show_time="10:00",
+        is_sold=True
+    ).all()
+    sold_set = {(s.row, s.col) for s in sold_seats}
+
+    # 合并用户当前已选座位（未确认）
+    selected_set = set()
+    for seat_str in selected_seats:
+        if '-' in seat_str:
+            r, c = seat_str.split('-')
+            selected_set.add((int(r), int(c)))
+
+    occupied = sold_set | selected_set
+
+    # 解析用户输入
+    # 人数
+    num_match = re.search(r'(\d+)\s*人|(两|三|四)人|(一|两|三|四)个|(一|两|三|四)人', user_text)
+    if num_match:
+        if num_match.group(1):
+            num = int(num_match.group(1))
+        elif num_match.group(2) == '两':
+            num = 2
+        elif num_match.group(2) == '三':
+            num = 3
+        elif num_match.group(2) == '四':
+            num = 4
+        else:
+            num = 1
+    else:
+        num = 2  # 默认两人
+
+    need_adjacent = bool(re.search(r'连坐|一起|挨着|相邻|并排', user_text))
+    prefer_center = bool(re.search(r'中间|中央|中心|视野好|好视野', user_text))
+    prefer_edge = bool(re.search(r'边上|角落|靠边', user_text))
+    prefer_back = bool(re.search(r'后排|靠后', user_text))
+    prefer_front = bool(re.search(r'前排|靠前', user_text))
+
+    # 情感分析（关键词）
+    is_introvert = bool(re.search(r'内向|安静|独自|不喜欢人|一个人', user_text))
+    is_couple = bool(re.search(r'情侣|浪漫|约会|恋爱', user_text))
+    if is_introvert:
+        num = 1
+        need_adjacent = False
+    # 辅助函数：计算周围空座位数量
+    def count_empty_around(row, col):
+        cnt = 0
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = row + dr, col + dc
+                if 1 <= nr <= 10 and 1 <= nc <= 15 and (nr, nc) not in occupied:
+                    cnt += 1
+        return cnt
+
+    # 为每个可用座位打分
+    candidates = []  # (row, col, score)
+    for row in range(1, 11):
+        for col in range(1, 16):
+            if (row, col) in occupied:
+                continue
+            score = 0
+            # 位置偏好
+            if prefer_center and 7 <= col <= 9:
+                score += 5
+            if prefer_edge and (col <= 3 or col >= 13):
+                score += 3
+            if prefer_back and row >= 8:
+                score += 4
+            if prefer_front and row <= 3:
+                score += 4
+            # 情感偏好
+            if is_introvert:
+                empty_around = count_empty_around(row, col)
+                score += empty_around * 2
+            if is_couple:
+                if row >= 8 and (col <= 3 or col >= 13):
+                    score += 6
+                empty_around = count_empty_around(row, col)
+                score += empty_around * 1.5
+            # 通用：越居中（行）得分越高
+            center_row_bonus = 5 - abs(row - 5.5)
+            score += center_row_bonus
+            candidates.append((row, col, score))
+
+    candidates.sort(key=lambda x: x[2], reverse=True)
+
+    # 如果需要连坐，寻找连续座位组
+    def find_adjacent_group(num):
+        best_group = None
+        best_score = -1
+        for row in range(1, 11):
+            for start_col in range(1, 16 - num + 1):
+                group = [(row, start_col + i) for i in range(num)]
+                if all((r, c) not in occupied for r, c in group):
+                    # 计算该组平均分
+                    total = sum(next(score for r2, c2, score in candidates if r2 == r and c2 == c)
+                                for r, c in group)
+                    avg = total / num
+                    if avg > best_score:
+                        best_score = avg
+                        best_group = group
+        return best_group
+
+    if need_adjacent:
+        group = find_adjacent_group(num)
+        if group:
+            recommendations = [f"{r}排{c}座" for r, c in group]
+        else:
+            # 找不到连坐，返回高评分的单个座位（但提示无法连坐）
+            recommendations = [f"{r}排{c}座" for r, c, _ in candidates[:num]]
+    else:
+        recommendations = [f"{r}排{c}座" for r, c, _ in candidates[:num]]
+
+    return jsonify({'recommendations': recommendations})
+
+@app.cli.command("upgrade-seats")
+def upgrade_seats():
+    """为座位表添加价格字段并初始化所有座位价格（幂等）"""
+    import sqlite3
+    db_path = os.path.join(os.path.dirname(__file__), 'instance', 'movies.db')
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    
+    # 检查 price 字段是否存在
+    try:
+        cur.execute("SELECT price FROM seat LIMIT 1")
+        print("✅ price 字段已存在")
+    except sqlite3.OperationalError:
+        try:
+            cur.execute("ALTER TABLE seat ADD COLUMN price INTEGER DEFAULT 25")
+            conn.commit()
+            print("✅ 已添加 price 字段")
+        except Exception as e:
+            print(f"❌ 添加字段失败: {e}")
+            conn.close()
+            return
+    
+    # 更新所有座位价格（基于位置，不是基于现有数据）
+    # 优选区：第3-8排，第5-11列 = 35元
+    # 其他区域 = 25元
+    try:
+        # 先全部设为25元
+        cur.execute("UPDATE seat SET price = 25")
+        conn.commit()
+        
+        # 再更新优选区为35元
+        cur.execute("""
+            UPDATE seat 
+            SET price = 35 
+            WHERE (row BETWEEN 3 AND 8) AND (col BETWEEN 5 AND 11)
+        """)
+        conn.commit()
+        premium_count = cur.rowcount
+        
+        # 统计
+        cur.execute("SELECT COUNT(*) FROM seat WHERE price = 35")
+        total_premium = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM seat")
+        total_seats = cur.fetchone()[0]
+        
+        print(f"✅ 已更新 {premium_count} 个优选座位为35元")
+        print(f"📊 总计：{total_premium} 个优选区(¥35)，{total_seats - total_premium} 个普通区(¥25)")
+        
+    except Exception as e:
+        print(f"⚠️ 更新价格时出错: {e}")
+    
+    conn.close()
+    print("数据库升级完成！")
+
+
+@app.cli.command("init-seats-for-movie")
+@click.argument('movie_id')
+def init_seats_for_movie(movie_id):
+    """为指定电影初始化所有座位（10排x15列）"""
+    from datetime import datetime
+    
+    movie = Movie.query.get(movie_id)
+    if not movie:
+        print(f"❌ 电影 {movie_id} 不存在")
+        return
+    
+    # 检查是否已有座位
+    existing_count = Seat.query.filter_by(movie_id=movie_id, hall="1号厅", show_time="10:00").count()
+    if existing_count > 0:
+        print(f"⚠️ 电影 {movie.title} 已有 {existing_count} 个座位，跳过初始化")
+        return
+    
+    # 创建 10排 x 15列 的座位
+    created = 0
+    for row in range(1, 11):
+        for col in range(1, 16):
+            # 判断是否为优选区
+            is_premium = (3 <= row <= 8 and 5 <= col <= 11)
+            price = 35 if is_premium else 25
+            
+            seat = Seat(
+                movie_id=movie_id,
+                row=row,
+                col=col,
+                hall="1号厅",
+                show_time="10:00",
+                is_sold=False,
+                price=price
+            )
+            db.session.add(seat)
+            created += 1
+    
+    db.session.commit()
+    print(f"✅ 已为《{movie.title}》创建 {created} 个座位")
+    print(f"   优选区(¥35)：第3-8排，第5-11列")
+    print(f"   普通区(¥25)：其他区域")
+
+# ==================== 支付API（弹窗版）====================
+
+@app.route('/api/pay-seats/<int:movie_id>', methods=['POST'])
+@login_required
+def api_pay_seats(movie_id):
+    """处理弹窗支付（用户点击"已完成支付"后）"""
+    data = request.get_json()
+    seats_data = data.get('seats', [])
+    total = data.get('total', 0)
+    
+    if not seats_data:
+        return jsonify({'success': False, 'message': '未选择座位'})
+    
+    try:
+        for seat_info in seats_data:
+            row = seat_info['row']
+            col = seat_info['col']
+            price = seat_info.get('price', 25)
+            
+            # 查找或创建座位记录
+            s = Seat.query.filter_by(
+                movie_id=movie_id,
+                row=row,
+                col=col,
+                hall="1号厅",
+                show_time="10:00"
+            ).first()
+            
+            if not s:
+                s = Seat(
+                    movie_id=movie_id,
+                    row=row,
+                    col=col,
+                    hall="1号厅",
+                    show_time="10:00",
+                    price=price
+                )
+                db.session.add(s)
+            
+            # 检查是否已被其他人购买
+            if s.is_sold:
+                return jsonify({
+                    'success': False, 
+                    'message': f'{row}排{col}座已被他人购买，请重新选座'
+                })
+            
+            s.is_sold = True
+            s.price = price
+        
+        db.session.commit()
+        return jsonify({
+            'success': True, 
+            'message': f'支付成功，共支付¥{total}',
+            'redirect': url_for('my_seats')
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)})
+
+# ------------------------------
+# ✅ 新增：座位模型（不影响原有表）
+# ------------------------------
+class Seat(db.Model):
+    __tablename__ = 'seat'
+    __table_args__ = {'extend_existing': True}
+    id = db.Column(db.Integer, primary_key=True)
+    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
+    row = db.Column(db.Integer, nullable=False)
+    col = db.Column(db.Integer, nullable=False)
+    hall = db.Column(db.String(20), default="1号厅")
+    show_time = db.Column(db.String(20), default="10:00")
+    is_sold = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -30,6 +30,20 @@
                 <i class="fas fa-star me-2"></i>
                 <span class="fw-bold">{% if user_rating %}修改评分{% else %}我已看过 (打分){% endif %}</span>
             </button>
+
+            <!-- ✅ 新增：选座购票按钮 -->
+            <a href="{{ url_for('seat_selection', movie_id=movie.id) }}" 
+                class="btn rounded-pill px-5 py-3 shadow-sm"
+                style="font-size: 1.1rem; font-weight: 700; text-decoration: none;
+                     {% if movie.tag == 'now' %}
+                     background: linear-gradient(95deg, #3b82f6, #2563eb); color: white;
+                     {% else %}
+                     background: linear-gradient(95deg, #4ecdc4, #44a08d); color: white;
+                     {% endif %}">
+                <i class="fas fa-ticket-alt me-2"></i>
+                {% if movie.tag == 'now' %}选座&购票{% else %}预约购票{% endif %}
+            </a>
+
             {% if user_rating %}
             <!-- 当前评分展示 + 删除按钮 -->
             <div class="d-flex align-items-center gap-2">
