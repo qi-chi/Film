@@ -18,6 +18,8 @@ class User(db.Model, UserMixin):
     favorites = db.relationship('Favorite', backref='user', lazy=True)
     comments = db.relationship('Comment', backref='user', lazy=True)
     ratings = db.relationship('Rating', backref='user', lazy=True) # 新增用户评分关系
+    circle_posts = db.relationship('CirclePost', backref='user', lazy=True)
+    circle_comments = db.relationship('CircleComment', backref='user', lazy=True)
 
 class Movie(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -57,6 +59,50 @@ class Comment(db.Model):
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Circle(db.Model):
+    """圈子模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    background_color = db.Column(db.String(20), nullable=True, default='#f0f0f0')  # 背景颜色
+    background_image = db.Column(db.String(255), nullable=True)  # 背景图片路径
+    
+    members = db.relationship('CircleMember', backref='circle', lazy=True)
+    posts = db.relationship('CirclePost', backref='circle', lazy=True)
+
+class CircleMember(db.Model):
+    """圈子成员模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    circle_id = db.Column(db.Integer, db.ForeignKey('circle.id'), nullable=False)
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # 确保用户在一个圈子中只存在一条记录
+    __table_args__ = (db.UniqueConstraint('user_id', 'circle_id', name='_user_circle_uc'),)
+
+class CirclePost(db.Model):
+    """圈子帖子模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    circle_id = db.Column(db.Integer, db.ForeignKey('circle.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    image_url = db.Column(db.String(255), nullable=True)  # 存储图片路径
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    comments = db.relationship('CircleComment', backref='post', lazy=True)
+
+class CircleComment(db.Model):
+    """圈子评论模型"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('circle_post.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('circle_comment.id'), nullable=True)  # 用于回复
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    replies = db.relationship('CircleComment', backref=db.backref('parent', remote_side=[id]), lazy=True)
 class Seat(db.Model):
     __tablename__ = 'seat'
     __table_args__ = {'extend_existing': True}
