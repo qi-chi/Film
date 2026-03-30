@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 {% extends "base.html" %}
 {% block title %}登录 - 光影推荐{% endblock %}
 {% block content %}
@@ -209,6 +210,10 @@
         </form>
 
         <div class="auth-divider"><span>或者</span></div>
+
+        <a href="{{ url_for('face_login_page') }}" class="auth-submit" style="display: block; text-align: center; text-decoration: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-bottom: 20px;">
+            <i class="fas fa-id-card-clip me-2"></i>人脸识别登录
+        </a>
 
         <div class="auth-footer">
             还没有账号？<a href="{{ url_for('register') }}">立即免费注册</a>

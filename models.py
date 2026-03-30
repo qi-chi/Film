@@ -13,6 +13,7 @@ class User(db.Model, UserMixin):
     age = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     avatar = db.Column(db.String(200), nullable=True)  # 新增头像字段
+    face_encoding = db.Column(db.Text, nullable=True)  # 人脸特征向量（JSON格式存储）
 
     favorites = db.relationship('Favorite', backref='user', lazy=True)
     comments = db.relationship('Comment', backref='user', lazy=True)
@@ -102,3 +103,19 @@ class CircleComment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     replies = db.relationship('CircleComment', backref=db.backref('parent', remote_side=[id]), lazy=True)
+class Seat(db.Model):
+    __tablename__ = 'seat'
+    __table_args__ = {'extend_existing': True}
+    id = db.Column(db.Integer, primary_key=True)
+    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
+    row = db.Column(db.Integer, nullable=False)
+    row = db.Column(db.Integer, nullable=False)  # 行号 1-10
+    col = db.Column(db.Integer, nullable=False)  # 列号 1-15
+    hall = db.Column(db.String(20), default="1号厅")
+    show_time = db.Column(db.String(20), default="10:00")
+    is_sold = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # ✅ 新增：座位价格（蓝色座位35元，普通座位25元）
+    price = db.Column(db.Integer, default=25)
+    
+    movie = db.relationship('Movie', backref=db.backref('seats', lazy=True))
