@@ -13,6 +13,7 @@ class User(db.Model, UserMixin):
     age = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     avatar = db.Column(db.String(200), nullable=True)  # 新增头像字段
+    face_encoding = db.Column(db.Text, nullable=True)  # 人脸特征向量（JSON格式存储）
 
     favorites = db.relationship('Favorite', backref='user', lazy=True)
     comments = db.relationship('Comment', backref='user', lazy=True)

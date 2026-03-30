@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+{% extends "base.html" %}
+{% block title %}人脸登录 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    .face-auth-container {
+        min-height: 80vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .face-auth-card {
+        width: 100%;
+        max-width: 480px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        padding: 40px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+        text-align: center;
+    }
+
+    .face-auth-title {
+        font-size: 1.6rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+        background: linear-gradient(90deg, #fff, rgba(255,255,255,0.7));
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .face-auth-subtitle {
+        color: rgba(255,255,255,0.5);
+        font-size: 0.95rem;
+        margin-bottom: 30px;
+    }
+
+    .camera-container {
+        position: relative;
+        width: 320px;
+        height: 320px;
+        margin: 0 auto 25px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 3px solid rgba(255,159,67,0.3);
+        background: linear-gradient(135deg, rgba(0,0,0,0.4), rgba(0,0,0,0.6));
+    }
+
+    .camera-container.active {
+        border-color: var(--accent-color);
+        box-shadow: 0 0 30px rgba(255,159,67,0.3);
+    }
+
+    #video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1); /* 镜像显示 */
+    }
+
+    #canvas {
+        display: none;
+    }
+
+    .camera-placeholder {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: rgba(255,255,255,0.4);
+    }
+
+    .camera-placeholder i {
+        font-size: 64px;
+        margin-bottom: 15px;
+        display: block;
+    }
+
+    .face-scan-line {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+        animation: scan 2s linear infinite;
+        opacity: 0;
+    }
+
+    .camera-container.scanning .face-scan-line {
+        opacity: 1;
+    }
+
+    @keyframes scan {
+        0% { top: 0; }
+        100% { top: 100%; }
+    }
+
+    .face-guide {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 200px;
+        height: 250px;
+        border: 2px dashed rgba(255,159,67,0.4);
+        border-radius: 50% 50% 45% 45%;
+        pointer-events: none;
+    }
+
+    .status-message {
+        min-height: 24px;
+        margin-bottom: 20px;
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+
+    .status-message.success {
+        color: #2ecc71;
+    }
+
+    .status-message.error {
+        color: #e74c3c;
+    }
+
+    .status-message.info {
+        color: var(--accent-color);
+    }
+
+    .face-auth-btn {
+        width: 100%;
+        padding: 14px 28px;
+        border-radius: 12px;
+        border: none;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 12px;
+    }
+
+    .face-auth-btn.primary {
+        background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+        color: #000;
+    }
+
+    .face-auth-btn.primary:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(255,159,67,0.4);
+    }
+
+    .face-auth-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .face-auth-btn.secondary {
+        background: transparent;
+        border: 1px solid rgba(255,255,255,0.2);
+        color: rgba(255,255,255,0.7);
+    }
+
+    .face-auth-btn.secondary:hover {
+        background: rgba(255,255,255,0.05);
+        border-color: rgba(255,255,255,0.3);
+    }
+
+    .auth-divider {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin: 25px 0;
+        color: rgba(255,255,255,0.4);
+    }
+
+    .auth-divider::before,
+    .auth-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: rgba(255,255,255,0.1);
+    }
+
+    .face-auth-footer {
+        margin-top: 20px;
+        font-size: 0.9rem;
+        color: rgba(255,255,255,0.5);
+    }
+
+    .face-auth-footer a {
+        color: var(--accent-color);
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .face-auth-footer a:hover {
+        text-decoration: underline;
+    }
+
+    .tips-list {
+        text-align: left;
+        background: rgba(255,255,255,0.03);
+        border-radius: 12px;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        font-size: 0.85rem;
+        color: rgba(255,255,255,0.6);
+    }
+
+    .tips-list li {
+        margin-bottom: 6px;
+        padding-left: 5px;
+    }
+
+    .tips-list li:last-child {
+        margin-bottom: 0;
+    }
+
+    .tips-list i {
+        color: var(--accent-color);
+        margin-right: 8px;
+        width: 16px;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: var(--accent-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-right: 8px;
+        vertical-align: middle;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+<div class="face-auth-container">
+    <div class="face-auth-card">
+        <h1 class="face-auth-title"><i class="fas fa-face-viewfinder me-2"></i>人脸登录</h1>
+        <p class="face-auth-subtitle">请面对摄像头，系统将自动识别</p>
+
+        <ul class="tips-list list-unstyled">
+            <li><i class="fas fa-lightbulb"></i>确保光线充足，避免背光</li>
+            <li><i class="fas fa-user"></i>将面部对准圆形框内</li>
+            <li><i class="fas fa-eye"></i>保持面部无遮挡，直视摄像头</li>
+        </ul>
+
+        <div class="camera-container" id="cameraContainer">
+            <div class="camera-placeholder" id="placeholder">
+                <i class="fas fa-camera"></i>
+                <span>点击开启摄像头</span>
+            </div>
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" width="320" height="320"></canvas>
+            <div class="face-scan-line"></div>
+            <div class="face-guide"></div>
+        </div>
+
+        <div class="status-message" id="statusMessage"></div>
+
+        <button class="face-auth-btn primary" id="startBtn" onclick="startCamera()">
+            <i class="fas fa-video me-2"></i>开启摄像头
+        </button>
+
+        <button class="face-auth-btn primary" id="captureBtn" onclick="captureAndLogin()" style="display: none;">
+            <i class="fas fa-fingerprint me-2"></i>识别登录
+        </button>
+
+        <div class="auth-divider"><span>或者</span></div>
+
+        <a href="{{ url_for('login') }}" class="face-auth-btn secondary">
+            <i class="fas fa-keyboard me-2"></i>使用密码登录
+        </a>
+
+        <div class="face-auth-footer">
+            还没有账号？<a href="{{ url_for('register') }}">立即注册</a>
+        </div>
+    </div>
+</div>
+
+<script>
+let video = document.getElementById('video');
+let canvas = document.getElementById('canvas');
+let startBtn = document.getElementById('startBtn');
+let captureBtn = document.getElementById('captureBtn');
+let placeholder = document.getElementById('placeholder');
+let cameraContainer = document.getElementById('cameraContainer');
+let statusMessage = document.getElementById('statusMessage');
+let stream = null;
+
+// 设置状态消息
+function setStatus(message, type = 'info') {
+    statusMessage.textContent = message;
+    statusMessage.className = 'status-message ' + type;
+}
+
+// 开启摄像头
+async function startCamera() {
+    try {
+        setStatus('正在启动摄像头...', 'info');
+        startBtn.disabled = true;
+
+        stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: 'user'
+            }
+        });
+
+        video.srcObject = stream;
+        placeholder.style.display = 'none';
+        cameraContainer.classList.add('active');
+
+        startBtn.style.display = 'none';
+        captureBtn.style.display = 'block';
+
+        setStatus('摄像头已开启，请将面部对准圆形区域后点击识别', 'info');
+    } catch (err) {
+        console.error('摄像头启动失败:', err);
+        setStatus('无法访问摄像头，请检查权限设置', 'error');
+        startBtn.disabled = false;
+    }
+}
+
+// 捕获图像并登录
+async function captureAndLogin() {
+    if (!stream) {
+        setStatus('请先开启摄像头', 'error');
+        return;
+    }
+
+    captureBtn.disabled = true;
+    cameraContainer.classList.add('scanning');
+    setStatus('正在识别中...', 'info');
+
+    // 绘制视频帧到 canvas
+    let ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // 转换为 base64
+    let imageData = canvas.toDataURL('image/jpeg', 0.9);
+
+    try {
+        let response = await fetch('/api/face/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: imageData })
+        });
+
+        let result = await response.json();
+
+        if (result.success) {
+            setStatus(result.message, 'success');
+            // 登录成功，跳转到首页
+            setTimeout(() => {
+                window.location.href = '{{ url_for("home") }}';
+            }, 1500);
+        } else {
+            setStatus(result.message, 'error');
+            captureBtn.disabled = false;
+            cameraContainer.classList.remove('scanning');
+        }
+    } catch (err) {
+        console.error('登录请求失败:', err);
+        setStatus('人脸识别失败，请重试', 'error');
+        captureBtn.disabled = false;
+        cameraContainer.classList.remove('scanning');
+    }
+}
+
+// 页面关闭时停止摄像头
+window.addEventListener('beforeunload', () => {
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+});
+</script>
+{% endblock %}

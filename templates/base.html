@@ -400,13 +400,6 @@
                 <ul class="navbar-nav mx-auto">
                     {% if current_user.is_authenticated %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('movies') }}">电影库</a></li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('now_playing') }}" style="position:relative;">
-                                热映
-                                <span style="position:absolute;top:6px;right:-4px;width:6px;height:6px;border-radius:50%;background:#ff6b6b;animation:pulse-dot 1.2s infinite;"></span>
-                            </a>
-                        </li>
-                        <li class="nav-item"><a class="nav-link" href="{{ url_for('upcoming') }}">待映</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('recommendations') }}">智能推荐</a></li>
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('visualize') }}">数据洞察</a></li>
                     {% endif %}
@@ -415,7 +408,7 @@
                     {% if current_user.is_authenticated %}
                         <li class="nav-item">
                             <a class="nav-link d-flex align-items-center" href="{{ url_for('profile') }}">
-                                <img src="{{ current_user.avatar or 'https://ui-avatars.com/api/?name=' + current_user.username + '&background=ff9f43&color=000&size=32' }}" 
+                                <img src="{% if current_user.avatar %}{{ url_for('static', filename='uploads/avatars/' + current_user.avatar) }}{% else %}https://ui-avatars.com/api/?name={{ current_user.username }}&background=ff9f43&color=000&size=32{% endif %}" 
      class="rounded-circle me-2" 
      style="width: 32px; height: 32px; object-fit: cover;" 
      alt="Avatar">
@@ -515,23 +508,13 @@
             body.innerHTML += `<div class="ai-message bot ai-typing" id="${typingId}"><span></span><span></span><span></span></div>`;
             body.scrollTop = body.scrollHeight;
 
-            fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: msg })
-            })
-            .then(res => res.json())
-            .then(data => {
+            // 模拟 AI 响应
+            setTimeout(() => {
                 const typing = document.getElementById(typingId);
                 if (typing) typing.remove();
-                body.innerHTML += `<div class="ai-message bot">${data.reply}</div>`;
+                body.innerHTML += `<div class="ai-message bot">您好！我是智能电影推荐助手，很高兴为您服务。</div>`;
                 body.scrollTop = body.scrollHeight;
-            })
-            .catch(() => {
-                const typing = document.getElementById(typingId);
-                if (typing) typing.remove();
-                body.innerHTML += `<div class="ai-message bot" style="color:#ff6b6b;">系统异常，请稍后再试。</div>`;
-            });
+            }, 1000);
         }
     </script>
     

@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 {% extends "base.html" %}
 {% block title %}注册 - 光影推荐{% endblock %}
 {% block content %}
@@ -219,7 +220,7 @@
             <div class="auth-benefit-item"><i class="fas fa-check-circle"></i>收藏追踪</div>
         </div>
 
-        <form method="POST">
+        <form method="POST" id="registerForm">
             <div class="auth-input-group">
                 <label>用户名</label>
                 <div class="auth-input-wrap">
@@ -235,6 +236,20 @@
                 </div>
                 <p class="auth-hint"><i class="fas fa-shield-alt me-1"></i>密码经过安全加密存储，请放心</p>
             </div>
+            
+            <!-- 人脸注册选项 -->
+            <div class="auth-input-group">
+                <label>人脸登录</label>
+                <div class="auth-face-option">
+                    <button type="button" class="face-auth-btn" onclick="openFaceRegisterModal()">
+                        <i class="fas fa-fingerprint me-2"></i>注册人脸登录
+                    </button>
+                    <p class="auth-hint"><i class="fas fa-info-circle me-1"></i>注册后可使用人脸识别快速登录</p>
+                </div>
+            </div>
+            
+            <input type="hidden" name="face_encoding" id="faceEncodingInput">
+            
             <button type="submit" class="auth-submit">
                 <i class="fas fa-user-plus me-2"></i>免费注册
             </button>
@@ -247,4 +262,375 @@
         </div>
     </div>
 </div>
+
+<!-- 人脸注册模态框 -->
+<div id="face-register-modal" class="face-modal">
+    <div class="face-modal-content">
+        <div class="face-modal-header">
+            <h3>注册人脸登录</h3>
+            <button class="close-btn" onclick="closeFaceRegisterModal()">&times;</button>
+        </div>
+        <div class="face-modal-body">
+            <div class="face-camera-container">
+                <div id="face-register-placeholder" class="face-placeholder">
+                    <i class="fas fa-camera fa-4x"></i>
+                    <p>点击下方按钮开始</p>
+                </div>
+                <video id="face-register-video" class="face-video" autoplay playsinline></video>
+                <canvas id="face-register-canvas" class="face-canvas"></canvas>
+                <div id="face-register-scan-line" class="face-scan-line"></div>
+            </div>
+            <div id="face-register-status" class="face-status">
+                <p>请点击下方按钮开始摄像头</p>
+            </div>
+            <div class="face-modal-buttons">
+                <button id="face-register-start-btn" class="face-btn start-btn" onclick="startFaceRegisterCamera()">
+                    <i class="fas fa-video me-2"></i>开启摄像头
+                </button>
+                <button id="face-register-capture-btn" class="face-btn capture-btn" onclick="captureAndRegisterFace()" disabled>
+                    <i class="fas fa-camera me-2"></i>捕获人脸
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== 人脸注册相关函数 ==========
+
+let faceRegisterStream = null;
+let faceRegisterVideo = document.getElementById('face-register-video');
+let faceRegisterCanvas = document.getElementById('face-register-canvas');
+let faceRegisterPlaceholder = document.getElementById('face-register-placeholder');
+let faceRegisterScanLine = document.getElementById('face-register-scan-line');
+let faceRegisterStartBtn = document.getElementById('face-register-start-btn');
+let faceRegisterCaptureBtn = document.getElementById('face-register-capture-btn');
+let faceRegisterStatus = document.getElementById('face-register-status');
+let faceRegisterModal = document.getElementById('face-register-modal');
+let faceEncodingInput = document.getElementById('faceEncodingInput');
+
+// 打开人脸注册模态框
+function openFaceRegisterModal() {
+    faceRegisterModal.style.display = 'flex';
+    resetFaceRegisterModal();
+}
+
+// 关闭人脸注册模态框
+function closeFaceRegisterModal() {
+    faceRegisterModal.style.display = 'none';
+    stopFaceRegisterCamera();
+}
+
+// 重置模态框状态
+function resetFaceRegisterModal() {
+    stopFaceRegisterCamera();
+    faceRegisterPlaceholder.style.display = 'flex';
+    faceRegisterVideo.style.display = 'none';
+    faceRegisterScanLine.style.opacity = '0';
+    faceRegisterStartBtn.style.display = 'inline-block';
+    faceRegisterCaptureBtn.style.display = 'none';
+    faceRegisterStartBtn.disabled = false;
+    faceRegisterCaptureBtn.disabled = false;
+    setFaceRegisterStatus('请点击下方按钮开始摄像头', 'info');
+}
+
+// 设置状态信息
+function setFaceRegisterStatus(message, type = 'info') {
+    faceRegisterStatus.innerHTML = `<p class="face-status-${type}">${message}</p>`;
+}
+
+// 启动摄像头
+async function startFaceRegisterCamera() {
+    try {
+        faceRegisterStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        faceRegisterVideo.srcObject = faceRegisterStream;
+        
+        faceRegisterPlaceholder.style.display = 'none';
+        faceRegisterVideo.style.display = 'block';
+        faceRegisterStartBtn.style.display = 'none';
+        faceRegisterCaptureBtn.style.display = 'inline-block';
+        
+        setFaceRegisterStatus('摄像头已开启，请将面部对正圆形区域后点击捕获', 'info');
+        
+        // 添加扫描线动画
+        faceRegisterScanLine.style.opacity = '1';
+    } catch (err) {
+        console.error('摄像头启动失败:', err);
+        setFaceRegisterStatus('无法访问摄像头，请检查权限设置', 'error');
+        faceRegisterStartBtn.disabled = false;
+    }
+}
+
+// 停止摄像头
+function stopFaceRegisterCamera() {
+    if (faceRegisterStream) {
+        faceRegisterStream.getTracks().forEach(track => track.stop());
+        faceRegisterStream = null;
+    }
+}
+
+// 捕获人脸并注册
+async function captureAndRegisterFace() {
+    if (!faceRegisterStream) {
+        setFaceRegisterStatus('请先开启摄像头', 'error');
+        return;
+    }
+    
+    faceRegisterCaptureBtn.disabled = true;
+    setFaceRegisterStatus('正在识别面部...', 'info');
+    
+    try {
+        // 绘制视频帧到画布
+        let ctx = faceRegisterCanvas.getContext('2d');
+        faceRegisterCanvas.width = faceRegisterVideo.videoWidth;
+        faceRegisterCanvas.height = faceRegisterVideo.videoHeight;
+        ctx.drawImage(faceRegisterVideo, 0, 0, faceRegisterCanvas.width, faceRegisterCanvas.height);
+        
+        // 转换为 base64
+        let imageData = faceRegisterCanvas.toDataURL('image/jpeg', 0.9);
+        
+        // 发送到服务器进行人脸特征提取
+        let response = await fetch('/api/face/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ image: imageData })
+        });
+        
+        let result = await response.json();
+        
+        if (result.success) {
+            // 存储人脸特征到隐藏输入框
+            faceEncodingInput.value = result.encoding;
+            setFaceRegisterStatus('人脸注册成功！', 'success');
+            
+            // 3秒后关闭模态框
+            setTimeout(() => {
+                closeFaceRegisterModal();
+            }, 1500);
+        } else {
+            setFaceRegisterStatus(result.message, 'error');
+            faceRegisterCaptureBtn.disabled = false;
+        }
+    } catch (err) {
+        console.error('人脸注册失败:', err);
+        setFaceRegisterStatus('人脸识别失败，请重试', 'error');
+        faceRegisterCaptureBtn.disabled = false;
+    }
+}
+
+// 页面关闭时停止摄像头
+window.addEventListener('beforeunload', stopFaceRegisterCamera);
+</script>
+
+<style>
+/* 人脸注册模态框样式 */
+.face-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.face-modal-content {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 500px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+}
+
+.face-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.face-modal-header h3 {
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.face-modal-body {
+    padding: 24px;
+}
+
+.face-camera-container {
+    position: relative;
+    width: 100%;
+    padding-top: 100%; /* 1:1 Aspect Ratio */
+    margin-bottom: 20px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.face-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.face-placeholder i {
+    margin-bottom: 12px;
+}
+
+.face-video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+}
+
+.face-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
+}
+
+.face-scan-line {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+    opacity: 0;
+    animation: scan 2s linear infinite;
+}
+
+@keyframes scan {
+    0% { top: 0; opacity: 0; }
+    50% { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+}
+
+.face-status {
+    text-align: center;
+    margin-bottom: 20px;
+    min-height: 40px;
+}
+
+.face-status-info {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.face-status-success {
+    color: #4CAF50;
+}
+
+.face-status-error {
+    color: #f44336;
+}
+
+.face-modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.face-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.start-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.start-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.capture-btn {
+    background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+    color: #000;
+}
+
+.capture-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(255, 159, 67, 0.4);
+}
+
+.face-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 人脸认证按钮样式 */
+.face-auth-btn {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid rgba(255, 159, 67, 0.4);
+    border-radius: 12px;
+    background: rgba(255, 159, 67, 0.1);
+    color: var(--accent-color);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 8px;
+}
+
+.face-auth-btn:hover {
+    background: rgba(255, 159, 67, 0.15);
+    border-color: var(--accent-color);
+    transform: translateY(-1px);
+}
+</style>
+
 {% endblock %}
