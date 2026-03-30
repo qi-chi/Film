@@ -55,3 +55,20 @@ class Comment(db.Model):
     movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Seat(db.Model):
+    __tablename__ = 'seat'
+    __table_args__ = {'extend_existing': True}
+    id = db.Column(db.Integer, primary_key=True)
+    movie_id = db.Column(db.Integer, db.ForeignKey('movie.id'), nullable=False)
+    row = db.Column(db.Integer, nullable=False)
+    row = db.Column(db.Integer, nullable=False)  # 行号 1-10
+    col = db.Column(db.Integer, nullable=False)  # 列号 1-15
+    hall = db.Column(db.String(20), default="1号厅")
+    show_time = db.Column(db.String(20), default="10:00")
+    is_sold = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # ✅ 新增：座位价格（蓝色座位35元，普通座位25元）
+    price = db.Column(db.Integer, default=25)
+    
+    movie = db.relationship('Movie', backref=db.backref('seats', lazy=True))

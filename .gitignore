@@ -34,7 +34,8 @@ env/
 
 # Database (instance/movies.db 包含电影数据，允许提交)
 # *.db 和 instance/ 已移除排除规则
-
+instance/*.db
+*.db
 # Model files (large files)
 models/*.pkl
 models/*.pth
