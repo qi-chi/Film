@@ -2,17 +2,25 @@ import os
 import random
 import urllib.parse
 import pickle
-import torch
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Movie, Favorite, Comment, Rating
-from recommender import HeteroRecommender
 import uuid
 from werkzeug.utils import secure_filename
-from content_recommender import (
-    compute_and_save_embeddings, get_hybrid_recommendations, embeddings_ready
-)
+from face_auth import extract_face_encoding, compare_faces, find_best_match, encoding_to_json
+
+# 尝试导入 PyTorch 相关模块
+try:
+    import torch
+    from recommender import HeteroRecommender
+    from content_recommender import (
+        compute_and_save_embeddings, get_hybrid_recommendations, embeddings_ready
+    )
+    pytorch_available = True
+except ImportError:
+    print("⚠️  PyTorch 导入失败，推荐系统将使用基础模式")
+    pytorch_available = False
 
 app = Flask(__name__)
 
@@ -47,90 +55,19 @@ def load_user(user_id):
 
 @app.cli.command("upgrade-db")
 def upgrade_db():
-    """为现有数据库添加 tmdb_id / movie_type / release_date 字段（幂等，可重复执行）。"""
-    import sqlite3
-    db_path = os.path.join(os.path.dirname(__file__), 'instance', 'movies.db')
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-    new_cols = [
-        ("tmdb_id",      "INTEGER"),
-        ("movie_type",   "VARCHAR(20) DEFAULT 'popular'"),
-        ("release_date", "VARCHAR(20)"),
-    ]
-    for col_name, col_def in new_cols:
-        try:
-            cur.execute(f"ALTER TABLE movie ADD COLUMN {col_name} {col_def}")
-            print(f"  已添加字段: {col_name}")
-        except Exception:
-            print(f"  字段已存在（跳过）: {col_name}")
-    conn.commit()
-    conn.close()
-    print("数据库升级完成。")
-
-
-@app.cli.command("sync-screenings")
-def sync_screenings():
-    """从 TMDB 同步正在热映和即将上映电影到数据库（按 tmdb_id 去重）。"""
-    from data_loader import fetch_tmdb_now_playing, fetch_tmdb_upcoming
-
+    """自动执行数据库迁移，确保所有模型字段都同步到数据库。"""
+    from flask_migrate import upgrade
     with app.app_context():
-        existing = {
-            m.tmdb_id: m
-            for m in Movie.query.filter(Movie.tmdb_id.isnot(None)).all()
-        }
-
-        def upsert_batch(df, movie_type):
-            from datetime import date
-            today = date.today().isoformat()
-            added = updated = skipped = 0
-            for _, row in df.iterrows():
-                # upcoming 模式下，跳过上映日期已过期的条目
-                rd = row.get('release_date', '') or ''
-                if movie_type == 'upcoming' and rd and rd < today:
-                    skipped += 1
-                    continue
-                tid = int(row['tmdb_id'])
-                poster = row['poster_url'] or \
-                    f"https://via.placeholder.com/300x450?text={urllib.parse.quote(row['title'][:10])}"
-                if tid in existing:
-                    m = existing[tid]
-                    m.movie_type   = movie_type
-                    m.release_date = rd
-                    updated += 1
-                else:
-                    m = Movie(
-                        tmdb_id      = tid,
-                        title        = row['title'],
-                        description  = row['overview'],
-                        release_year = row['year'],
-                        release_date = rd,
-                        genre        = row['primary_genre'],
-                        rating       = row['rating'],
-                        poster_url   = poster,
-                        movie_type   = movie_type,
-                    )
-                    db.session.add(m)
-                    existing[tid] = m
-                    added += 1
-            db.session.commit()
-            print(f"  [{movie_type}] 新增 {added} 部，更新 {updated} 部，跳过过期 {skipped} 部。")
-
-        print("正在拉取正在热映电影...")
-        now_df = fetch_tmdb_now_playing(100)
-        if not now_df.empty:
-            upsert_batch(now_df, 'now_playing')
-
-        print("正在拉取即将上映电影...")
-        up_df = fetch_tmdb_upcoming(100)
-        if not up_df.empty:
-            upsert_batch(up_df, 'upcoming')
-
-        print("同步完成！")
-
+        upgrade()
+    print("数据库迁移执行完成！")
 
 @app.cli.command("build-embeddings")
 def build_embeddings_cmd():
     """预计算所有电影的内容向量（BERT 或 TF-IDF），用于内容推荐。"""
+    if not pytorch_available:
+        print("⚠️  PyTorch 不可用，无法构建内容向量")
+        return
+    
     with app.app_context():
         movies = Movie.query.all()
         if not movies:
@@ -142,64 +79,29 @@ def build_embeddings_cmd():
 @app.cli.command("init-db")
 def init_db():
     db.create_all()
-    # 导入 TMDB 数据
-    if Movie.query.count() == 0:
-        print("正在从 TMDB 获取最新热门电影数据，这可能需要几十秒钟...")
-        from data_loader import fetch_tmdb_popular_movies
-        
-        # 获取 xx 部热门电影
-        movies_df = fetch_tmdb_popular_movies(1000)#获取xx部电影
-        
-        count = 0
-        for _, row in movies_df.iterrows():
-            m = Movie(
-                title=row['title'],
-                description=row['overview'],
-                release_year=row['year'],
-                genre=row['primary_genre'],
-                rating=row['rating'],
-                poster_url=row['poster_url'] or f"https://via.placeholder.com/300x450?text={urllib.parse.quote(row['title'][:10])}"
-            )
-            db.session.add(m)
-            count += 1
-        
-        db.session.commit()
-        print(f"数据库初始化完成，成功导入 {count} 部 TMDB 中文电影数据。")
+    print("数据库初始化完成！")
 
-# --- Routes ---
+# --- 路由定义 ---
 
 @app.route('/')
 def index():
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    return redirect(url_for('login'))
+
+@app.route('/home')
+@login_required
+def home():
+    # 首页展示逻辑
     return render_template('index.html')
 
-# 1. 注册与登录
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        if User.query.filter_by(username=username).first():
-            flash('用户名已存在，请选择其他用户名。', 'danger')
-            return redirect(url_for('register'))
-            
-        user = User(
-            username=username,
-            password_hash=generate_password_hash(password)
-        )
-        db.session.add(user)
-        db.session.commit()
-        flash('注册成功，请登录。', 'success')
-        return redirect(url_for('login'))
-        
-    return render_template('register.html')
+# 1. 认证相关
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        return redirect(url_for('home'))
+    
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -208,19 +110,168 @@ def login():
         if user and check_password_hash(user.password_hash, password):
             login_user(user)
             flash('登录成功！', 'success')
-            next_page = request.args.get('next')
-            return redirect(next_page or url_for('movies'))
+            return redirect(url_for('home'))
         else:
-            flash('用户名或密码错误。', 'danger')
-            
+            flash('用户名或密码错误', 'error')
+    
     return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        face_encoding = request.form.get('face_encoding')
+        
+        if not username or not password:
+            flash('请填写所有必填字段', 'error')
+            return redirect(url_for('register'))
+        
+        # 检查用户名是否已存在
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash('用户名已被使用', 'error')
+            return redirect(url_for('register'))
+        
+        # 创建新用户
+        user = User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            face_encoding=face_encoding
+        )
+        db.session.add(user)
+        db.session.commit()
+        
+        flash('注册成功！请登录', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html')
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
-    flash('您已退出登录。', 'info')
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
+
+# 人脸登录相关路由
+
+@app.route('/face_login')
+def face_login_page():
+    """人脸识别登录页面"""
+    if current_user.is_authenticated:
+        return redirect(url_for('home'))
+    return render_template('face_login.html')
+
+@app.route('/api/face/login', methods=['POST'])
+def face_login():
+    """
+    人脸识别登录 API
+    接收前端传来的 base64 图片，进行人脸比对
+    """
+    if current_user.is_authenticated:
+        return jsonify({'success': False, 'message': '您已登录'})
+    
+    data = request.get_json()
+    image_data = data.get('image')
+    
+    if not image_data:
+        return jsonify({'success': False, 'message': '未接收到图片数据'})
+    
+    # 提取人脸特征
+    success, result = extract_face_encoding(image_data)
+    
+    if not success:
+        return jsonify({'success': False, 'message': result})
+    
+    unknown_encoding = result
+    
+    # 获取所有已注册人脸的用户
+    users_with_face = User.query.filter(User.face_encoding.isnot(None)).all()
+    
+    if not users_with_face:
+        return jsonify({'success': False, 'message': '系统中暂无注册用户人脸数据'})
+    
+    # 构建用户特征列表
+    user_encodings = []
+    for user in users_with_face:
+        user_encodings.append({
+            'id': user.id,
+            'username': user.username,
+            'face_encoding': user.face_encoding
+        })
+    
+    # 查找最佳匹配
+    best_match, distance, debug_info = find_best_match(unknown_encoding, user_encodings)
+    
+    print(f"人脸登录调试信息: {debug_info}")
+    
+    if best_match:
+        # 登录成功
+        user = User.query.get(best_match['id'])
+        login_user(user)
+        return jsonify({
+            'success': True, 
+            'message': f'欢迎回来，{user.username}！',
+            'username': user.username,
+            'distance': round(distance, 4),
+            'debug': debug_info,
+            'redirect_url': url_for('home')
+        })
+    else:
+        return jsonify({
+            'success': False, 
+            'message': '人脸识别失败，未找到匹配用户，请尝试密码登录',
+            'debug': debug_info
+        })
+
+@app.route('/api/face/register', methods=['POST'])
+def face_register():
+    """
+    注册/更新人脸数据 API
+    如果用户已登录，更新人脸特征；如果未登录，只返回人脸特征
+    """
+    data = request.get_json()
+    image_data = data.get('image')
+    
+    if not image_data:
+        return jsonify({'success': False, 'message': '未接收到图片数据'})
+    
+    # 提取人脸特征
+    success, result = extract_face_encoding(image_data)
+    
+    if not success:
+        return jsonify({'success': False, 'message': result})
+    
+    # 如果用户已登录，保存到当前用户
+    if current_user.is_authenticated:
+        encoding_json = encoding_to_json(result)
+        current_user.face_encoding = encoding_json
+        db.session.commit()
+        return jsonify({
+            'success': True, 
+            'message': '人脸数据注册成功，下次可以使用人脸识别登录'
+        })
+    else:
+        # 用户未登录，返回人脸特征供注册表单使用
+        encoding_json = encoding_to_json(result)
+        return jsonify({
+            'success': True, 
+            'encoding': encoding_json,
+            'message': '人脸特征提取成功'
+        })
+
+@app.route('/api/face/check', methods=['GET'])
+@login_required
+def check_face_registered():
+    """检查当前用户是否已注册人脸"""
+    has_face = current_user.face_encoding is not None
+    return jsonify({
+        'has_face': has_face,
+        'username': current_user.username
+    })
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -229,69 +280,47 @@ def allowed_file(filename):
 @app.route('/upload_avatar', methods=['POST'])
 @login_required
 def upload_avatar():
-    # 检查是否有文件上传
+    """上传头像 API"""
     if 'avatar' not in request.files:
-        return jsonify({'error': '未选择文件'}), 400
+        return jsonify({'success': False, 'message': 'No file part'})
+    
     file = request.files['avatar']
     if file.filename == '':
-        return jsonify({'error': '文件名为空'}), 400
-    if not allowed_file(file.filename):
-        return jsonify({'error': '不支持的文件类型，请上传 jpg/png/gif 图片'}), 400
+        return jsonify({'success': False, 'message': 'No selected file'})
+    
+    if file and allowed_file(file.filename):
+        # 生成唯一文件名
+        filename = str(uuid.uuid4()) + '.' + file.filename.rsplit('.', 1)[1].lower()
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # 保存到用户信息
+        current_user.avatar = filename
+        db.session.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': '头像上传成功',
+            'avatar_url': url_for('static', filename='uploads/avatars/' + filename)
+        })
+    else:
+        return jsonify({'success': False, 'message': '不支持的文件类型'})
 
-    # 生成安全的文件名（避免重名）
-    ext = file.filename.rsplit('.', 1)[1].lower()
-    filename = f"{current_user.id}_{uuid.uuid4().hex}.{ext}"
-    # 保存文件
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(file_path)
-
-    # 保存相对路径到数据库（用于前端显示）
-    avatar_url = url_for('static', filename=f'uploads/avatars/{filename}')
-    current_user.avatar = avatar_url
-    db.session.commit()
-
-    return jsonify({'success': True, 'avatar_url': avatar_url})
-
-# 7. 个人中心
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
+    """用户个人资料页面"""
     if request.method == 'POST':
-        username = request.form.get('username')
+        # 处理个人信息更新
         email = request.form.get('email')
         age = request.form.get('age')
         gender = request.form.get('gender')
+        bio = request.form.get('bio')
         
-        # 处理用户名修改（唯一性校验）
-        if username and username != current_user.username:
-            # 检查用户名是否已被其他用户占用
-            existing_user = User.query.filter(User.username == username, User.id != current_user.id).first()
-            if existing_user:
-                flash('用户名已被占用，请选择其他用户名。', 'danger')
-                return redirect(url_for('profile'))
-            current_user.username = username
-        
-        # 更新其他信息
-        if email:
-    # 格式校验（简单正则）
-            import re
-            email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_regex, email):
-                flash('邮箱格式无效，请重新输入。', 'danger')
-                return redirect(url_for('profile'))
-            current_user.email = email
-        else:
-    # 用户清空邮箱，设为 None
-            current_user.email = None
-        if age:
-            try:
-                current_user.age = int(age)
-            except ValueError:
-                flash('年龄必须是数字。', 'danger')
-                return redirect(url_for('profile'))
-        else:
-            current_user.age = None
-        current_user.gender = gender
+        current_user.email = email if email else None
+        current_user.age = age if age else None
+        current_user.gender = gender if gender else None
+        current_user.bio = bio if bio else None
         
         db.session.commit()
         flash('个人信息更新成功。', 'success')
@@ -338,8 +367,52 @@ def movie_detail(movie_id):
             
     comments = Comment.query.filter_by(movie_id=movie_id).order_by(Comment.created_at.desc()).all()
     user_rating = Rating.query.filter_by(user_id=current_user.id, movie_id=movie_id).first()
+    
+    # 协同过滤推荐：喜欢这个电影的人同样也喜欢的电影
+    similar_movies = []
+    
+    # 1. 找到喜欢这个电影的所有用户（收藏或评分 >= 7 的用户）
+    users_who_liked = set()
+    
+    # 从收藏表获取用户
+    favorites = Favorite.query.filter_by(movie_id=movie_id).all()
+    users_who_liked.update([f.user_id for f in favorites])
+    
+    # 从评分表获取高评分用户（评分 >= 7）
+    high_ratings = Rating.query.filter_by(movie_id=movie_id).filter(Rating.score >= 7).all()
+    users_who_liked.update([r.user_id for r in high_ratings])
+    
+    # 2. 找到这些用户还喜欢的其他电影
+    if users_who_liked:
+        # 统计每个电影被这些用户喜欢的次数
+        movie_like_count = {}
+        
+        # 从收藏表统计
+        other_favorites = Favorite.query.filter(Favorite.user_id.in_(users_who_liked)).all()
+        for fav in other_favorites:
+            if fav.movie_id != movie_id:  # 排除当前电影
+                movie_like_count[fav.movie_id] = movie_like_count.get(fav.movie_id, 0) + 1
+        
+        # 从评分表统计（评分 >= 7）
+        other_ratings = Rating.query.filter(Rating.user_id.in_(users_who_liked)).filter(Rating.score >= 7).all()
+        for rating in other_ratings:
+            if rating.movie_id != movie_id:  # 排除当前电影
+                movie_like_count[rating.movie_id] = movie_like_count.get(rating.movie_id, 0) + 1
+        
+        # 3. 按被喜欢次数排序，取前 6 个
+        sorted_movies = sorted(movie_like_count.items(), key=lambda x: x[1], reverse=True)[:6]
+        
+        # 4. 获取电影详情
+        for movie_id_like, count in sorted_movies:
+            m = Movie.query.get(movie_id_like)
+            if m:
+                similar_movies.append({
+                    'movie': m,
+                    'like_count': count
+                })
+    
     return render_template('movie_detail.html', movie=movie, is_favorite=is_favorite,
-                           comments=comments, user_rating=user_rating)
+                           comments=comments, user_rating=user_rating, similar_movies=similar_movies)
 
 # 4. 收藏列表
 @app.route('/toggle_favorite/<int:movie_id>', methods=['POST'])
@@ -364,6 +437,23 @@ def favorites():
     favs = Favorite.query.filter_by(user_id=current_user.id).all()
     movies = [f.movie for f in favs]
     return render_template('favorites.html', movies=movies)
+
+@app.route('/my_comments')
+@login_required
+def my_comments():
+    comments = Comment.query.filter_by(user_id=current_user.id).order_by(Comment.created_at.desc()).all()
+    return render_template('my_comments.html', comments=comments)
+
+@app.route('/delete_comment/<int:comment_id>', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    if comment.user_id != current_user.id:
+        return jsonify({'success': False, 'error': '无权删除此评论'})
+    
+    db.session.delete(comment)
+    db.session.commit()
+    return jsonify({'success': True})
 
 # 5. 数据可视化
 @app.route('/visualize')
@@ -398,55 +488,62 @@ def recommendations():
     all_movies = Movie.query.all()
     user_ratings = Rating.query.filter_by(user_id=current_user.id).all()
 
-    # ── 构建 NCF 评分器（若模型文件存在）──
-    ncf_scorer = None
-    model_path = os.path.join(os.path.dirname(__file__), 'models', 'recommender.pth')
-    dict_path  = os.path.join(os.path.dirname(__file__), 'models', 'mappings.pkl')
+    if not pytorch_available:
+        # PyTorch 不可用时，返回随机推荐
+        random.shuffle(all_movies)
+        rec_pairs = [(movie, 0.0) for movie in all_movies[:10]]
+        rec_type = "随机推荐"
+        emb_ready = False
+    else:
+        # ── 构建 NCF 评分器（若模型文件存在）──
+        ncf_scorer = None
+        model_path = os.path.join(os.path.dirname(__file__), 'models', 'recommender.pth')
+        dict_path  = os.path.join(os.path.dirname(__file__), 'models', 'mappings.pkl')
 
-    if os.path.exists(model_path) and os.path.exists(dict_path):
-        try:
-            with open(dict_path, 'rb') as f:
-                mappings = pickle.load(f)
+        if os.path.exists(model_path) and os.path.exists(dict_path):
+            try:
+                with open(dict_path, 'rb') as f:
+                    mappings = pickle.load(f)
 
-            user2idx  = mappings['user2idx']
-            movie2idx = mappings['movie2idx']
-            genre2idx = mappings['genre2idx']
+                user2idx  = mappings['user2idx']
+                movie2idx = mappings['movie2idx']
+                genre2idx = mappings['genre2idx']
 
-            ncf_model = HeteroRecommender(len(user2idx), len(movie2idx), len(genre2idx))
-            ncf_model.load_state_dict(
-                torch.load(model_path, map_location='cpu', weights_only=True)
-            )
-            ncf_model.eval()
+                ncf_model = HeteroRecommender(len(user2idx), len(movie2idx), len(genre2idx))
+                ncf_model.load_state_dict(
+                    torch.load(model_path, map_location='cpu', weights_only=True)
+                )
+                ncf_model.eval()
 
-            u_id     = current_user.id % len(user2idx) if user2idx else 0
-            u_age    = float(current_user.age or 30)
-            u_gender = 1 if current_user.gender == 'Male' else (2 if current_user.gender == 'Female' else 0)
+                u_id     = current_user.id % len(user2idx) if user2idx else 0
+                u_age    = float(current_user.age or 30)
+                u_gender = 1 if current_user.gender == 'Male' else (2 if current_user.gender == 'Female' else 0)
 
-            def ncf_scorer(movies):
-                if not movies:
-                    return []
-                m_ids   = torch.tensor([movie2idx.get(m.id, 0) for m in movies], dtype=torch.long)
-                m_years = torch.tensor([float(m.release_year or 2000) for m in movies], dtype=torch.float32)
-                m_gens  = torch.tensor([genre2idx.get(m.genre, 0) for m in movies], dtype=torch.long)
-                bs      = len(movies)
-                u_ids   = torch.tensor([u_id]     * bs, dtype=torch.long)
-                u_ages  = torch.tensor([u_age]    * bs, dtype=torch.float32)
-                u_gens  = torch.tensor([u_gender] * bs, dtype=torch.long)
-                with torch.no_grad():
-                    preds = ncf_model(u_ids, m_ids, u_ages, u_gens, m_years, m_gens).squeeze()
-                if preds.dim() == 0:
-                    preds = preds.unsqueeze(0)
-                return preds.tolist()
-        except Exception:
-            ncf_scorer = None
+                def ncf_scorer(movies):
+                    if not movies:
+                        return []
+                    m_ids   = torch.tensor([movie2idx.get(m.id, 0) for m in movies], dtype=torch.long)
+                    m_years = torch.tensor([float(m.release_year or 2000) for m in movies], dtype=torch.float32)
+                    m_gens  = torch.tensor([genre2idx.get(m.genre, 0) for m in movies], dtype=torch.long)
+                    bs      = len(movies)
+                    u_ids   = torch.tensor([u_id]     * bs, dtype=torch.long)
+                    u_ages  = torch.tensor([u_age]    * bs, dtype=torch.float32)
+                    u_gens  = torch.tensor([u_gender] * bs, dtype=torch.long)
+                    with torch.no_grad():
+                        preds = ncf_model(u_ids, m_ids, u_ages, u_gens, m_years, m_gens).squeeze()
+                    if preds.dim() == 0:
+                        preds = preds.unsqueeze(0)
+                    return preds.tolist()
+            except Exception:
+                ncf_scorer = None
 
-    # ── 调用混合推荐引擎，至少返回 10 部 ──
-    rec_pairs, rec_type = get_hybrid_recommendations(
-        user_ratings, all_movies, ncf_scorer=ncf_scorer, n=10
-    )
+        # ── 调用混合推荐引擎，至少返回 10 部 ──
+        rec_pairs, rec_type = get_hybrid_recommendations(
+            user_ratings, all_movies, ncf_scorer=ncf_scorer, n=10
+        )
 
-    # 检查内容向量是否就绪，供前端提示
-    emb_ready = embeddings_ready()
+        # 检查内容向量是否就绪，供前端提示
+        emb_ready = embeddings_ready()
 
     return render_template(
         'recommendations.html',
@@ -489,88 +586,7 @@ def delete_rating(movie_id):
         db.session.delete(rating)
         db.session.commit()
         return jsonify({'status': 'deleted'})
-    return jsonify({'status': 'not_found'}), 404
-
-# 9. 正在热映（只展示近 90 天内上映的，过了档期的自动隐藏）
-@app.route('/now-playing')
-@login_required
-def now_playing():
-    from datetime import date, timedelta
-    today  = date.today().isoformat()
-    cutoff = (date.today() - timedelta(days=90)).isoformat()  # 最长院线窗口约 90 天
-    movies = Movie.query.filter_by(movie_type='now_playing') \
-        .filter(Movie.release_date >= cutoff) \
-        .filter(Movie.release_date <= today) \
-        .order_by(Movie.rating.desc()).all()
-    return render_template('now_playing.html', movies=movies)
-
-
-# 10. 即将上映（只展示今天及以后上映的）
-@app.route('/upcoming')
-@login_required
-def upcoming():
-    from datetime import date
-    today = date.today().isoformat()  # 'YYYY-MM-DD' 字符串比较对 ISO 格式天然有效
-    movies = Movie.query.filter_by(movie_type='upcoming') \
-        .filter(Movie.release_date >= today) \
-        .order_by(Movie.release_date.asc()).all()
-    return render_template('upcoming.html', movies=movies)
-
-
-# 8. AI 小助手 API（智谱 GLM 接入 · 纯文本无任何格式）
-@app.route('/api/chat', methods=['POST'])
-@login_required
-def ai_chat():
-    try:
-        from zhipuai import ZhipuAI
-    except:
-        return jsonify({'reply': 'AI 服务未就绪，请检查依赖包'})
-    
-    data = request.get_json()
-    user_message = data.get('message', '').strip()
-
-    if not user_message:
-        return jsonify({'reply': '请输入你想咨询的问题~'})
-
-    try:
-        # ========== 智谱 AI 环境变量版本（可直接提交Git）==========
-        from zhipuai import ZhipuAI
-
-# 从系统环境变量读取 API Key，没有则不启用AI（不报错）
-        API_KEY = os.getenv("ZHIPU_API_KEY", "")
-
-        client = None
-        if API_KEY:
-            try:
-                client = ZhipuAI(api_key=API_KEY)
-            except:
-                client = None
-        response = client.chat.completions.create(
-            model="glm-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是电影推荐助手，只能用纯自然口语中文回答，绝对禁止使用任何 Markdown 格式，禁止使用 ## ** - 等任何符号，不要标题，不要列表，不要加粗，只用正常段落文字回答。"
-                },
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.7,
-        )
-        
-        reply = response.choices[0].message.content.strip()
-        
-        # 强制清理所有格式符号，确保 100% 干净文本
-        reply = reply.replace("**", "")
-        reply = reply.replace("## ", "")
-        reply = reply.replace("- ", "")
-        reply = reply.replace("### ", "")
-        reply = reply.replace("* ", "")
-        reply = reply.replace("> ", "")
-
-    except Exception as e:
-        reply = "AI 小助手暂时无法服务，请稍后再试"
-
-    return jsonify({'reply': reply})
+    return jsonify({'status': 'error'})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True)
