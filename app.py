@@ -13,6 +13,8 @@ from werkzeug.utils import secure_filename
 from content_recommender import (
     compute_and_save_embeddings, get_hybrid_recommendations, embeddings_ready
 )
+from datetime import date, timedelta  # 【新增】时间相关导入
+import re  # 【新增】正则表达式导入
 
 app = Flask(__name__)
 
@@ -37,8 +39,9 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = '请先登录以访问此页面。'
-from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
+from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]  # 保持原样
 migrate = Migrate(app, db)
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -80,7 +83,7 @@ def sync_screenings():
         }
 
         def upsert_batch(df, movie_type):
-            from datetime import date
+            from datetime import date  # 【保持原样】
             today = date.today().isoformat()
             added = updated = skipped = 0
             for _, row in df.iterrows():
@@ -170,6 +173,8 @@ def init_db():
 
 @app.route('/')
 def index():
+    if current_user.is_authenticated:  # 【新增】登录后跳转
+        return redirect(url_for('movies'))
     return render_template('index.html')
 
 # 1. 注册与登录
@@ -222,6 +227,65 @@ def logout():
     flash('您已退出登录。', 'info')
     return redirect(url_for('index'))
 
+@app.route('/face_login')
+def face_login_page():
+    return render_template('face_login.html')
+
+@app.route('/api/face/login', methods=['POST'])
+def face_login():
+    from face_auth import extract_face_encoding, find_best_match
+    
+    data = request.get_json()
+    image_data = data.get('image')
+    
+    if not image_data:
+        return jsonify({'success': False, 'message': '未收到图像数据'})
+    
+    success, result = extract_face_encoding(image_data)
+    if not success:
+        return jsonify({'success': False, 'message': result})
+    
+    users = User.query.filter(User.face_encoding.isnot(None)).all()
+    if not users:
+        return jsonify({'success': False, 'message': '系统中暂无人脸登录用户，请先注册人脸'})
+    
+    user_list = [{'id': u.id, 'username': u.username, 'face_encoding': u.face_encoding} for u in users]
+    matched_user, distance, debug_info = find_best_match(result, user_list, tolerance=1.0)
+    
+    print(f"人脸匹配调试信息: {debug_info}")
+    print(f"最佳匹配距离: {distance}")
+    
+    if matched_user:
+        user = User.query.get(matched_user['id'])
+        login_user(user)
+        return jsonify({'success': True, 'message': '人脸识别登录成功！'})
+    else:
+        return jsonify({'success': False, 'message': '人脸识别失败，请确保光线充足、正对摄像头'})
+
+@app.route('/api/face/register', methods=['POST'])
+def face_register():
+    from face_auth import extract_face_encoding, encoding_to_json
+    
+    data = request.get_json()
+    image_data = data.get('image')
+    username = data.get('username')
+    
+    if not image_data:
+        return jsonify({'success': False, 'message': '未收到图像数据'})
+    
+    success, result = extract_face_encoding(image_data)
+    if not success:
+        return jsonify({'success': False, 'message': result})
+    
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'success': False, 'message': '用户不存在'})
+    
+    user.face_encoding = encoding_to_json(result)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': '人脸注册成功！'})
+
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -261,6 +325,7 @@ def profile():
         email = request.form.get('email')
         age = request.form.get('age')
         gender = request.form.get('gender')
+        bio = request.form.get('bio')  # 【新增】bio字段
         
         # 处理用户名修改（唯一性校验）
         if username and username != current_user.username:
@@ -292,6 +357,7 @@ def profile():
         else:
             current_user.age = None
         current_user.gender = gender
+        current_user.bio = bio  # 【新增】保存bio
         
         db.session.commit()
         flash('个人信息更新成功。', 'success')
@@ -338,8 +404,36 @@ def movie_detail(movie_id):
             
     comments = Comment.query.filter_by(movie_id=movie_id).order_by(Comment.created_at.desc()).all()
     user_rating = Rating.query.filter_by(user_id=current_user.id, movie_id=movie_id).first()
+    
+    # ========== 【新增】相似推荐（喜欢这部的人也喜欢）==========
+    similar_movies = []
+    users_who_liked = set()
+    favorites = Favorite.query.filter_by(movie_id=movie_id).all()
+    users_who_liked.update([f.user_id for f in favorites])
+    high_ratings = Rating.query.filter_by(movie_id=movie_id).filter(Rating.score >= 7).all()
+    users_who_liked.update([r.user_id for r in high_ratings])
+
+    if users_who_liked:
+        movie_like_count = {}
+        other_favs = Favorite.query.filter(Favorite.user_id.in_(users_who_liked)).all()
+        for f in other_favs:
+            if f.movie_id != movie_id:
+                movie_like_count[f.movie_id] = movie_like_count.get(f.movie_id, 0) + 1
+        other_ratings = Rating.query.filter(Rating.user_id.in_(users_who_liked)).filter(Rating.score >= 7).all()
+        for r in other_ratings:
+            if r.movie_id != movie_id:
+                movie_like_count[r.movie_id] = movie_like_count.get(r.movie_id, 0) + 1
+
+        sorted_list = sorted(movie_like_count.items(), key=lambda x: x[1], reverse=True)[:6]
+        for mid, cnt in sorted_list:
+            m = Movie.query.get(mid)
+            if m:
+                similar_movies.append({"movie": m, "like_count": cnt})
+    # ========== 【新增结束】==========
+    
     return render_template('movie_detail.html', movie=movie, is_favorite=is_favorite,
-                           comments=comments, user_rating=user_rating)
+                           comments=comments, user_rating=user_rating,
+                           similar_movies=similar_movies)  # 【新增】传递similar_movies
 
 # 4. 收藏列表
 @app.route('/toggle_favorite/<int:movie_id>', methods=['POST'])
@@ -364,6 +458,24 @@ def favorites():
     favs = Favorite.query.filter_by(user_id=current_user.id).all()
     movies = [f.movie for f in favs]
     return render_template('favorites.html', movies=movies)
+
+# ========== 【新增】我的评论 + 删除评论 ==========
+@app.route('/my_comments')
+@login_required
+def my_comments():
+    comments = Comment.query.filter_by(user_id=current_user.id).order_by(Comment.created_at.desc()).all()
+    return render_template('my_comments.html', comments=comments)
+
+@app.route('/delete_comment/<int:comment_id>', methods=['POST'])
+@login_required
+def delete_comment(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    if comment.user_id != current_user.id:
+        return jsonify({'success': False, 'error': '无权限'}), 403
+    db.session.delete(comment)
+    db.session.commit()
+    return jsonify({'success': True})
+# ========== 【新增结束】==========
 
 # 5. 数据可视化
 @app.route('/visualize')
@@ -534,17 +646,13 @@ def ai_chat():
 
     try:
         # ========== 智谱 AI 环境变量版本（可直接提交Git）==========
-        from zhipuai import ZhipuAI
+        API_KEY = "6dbadc5c65a94b859b25667f09c6b2d9.waMFgK68iijarq5a"
+        client = ZhipuAI(api_key=API_KEY)
 
-# 从系统环境变量读取 API Key，没有则不启用AI（不报错）
-        API_KEY = os.getenv("ZHIPU_API_KEY", "")
 
-        client = None
-        if API_KEY:
-            try:
-                client = ZhipuAI(api_key=API_KEY)
-            except:
-                client = None
+
+        
+        
         response = client.chat.completions.create(
             model="glm-4",
             messages=[
