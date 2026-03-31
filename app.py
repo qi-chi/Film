@@ -154,7 +154,7 @@ def init_db():
         from data_loader import fetch_tmdb_popular_movies
         
         # 获取 xx 部热门电影
-        movies_df = fetch_tmdb_popular_movies(1000)#获取xx部电影
+        movies_df = fetch_tmdb_popular_movies(2000)#获取xx部电影
         
         count = 0
         for _, row in movies_df.iterrows():
