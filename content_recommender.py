@@ -5,16 +5,26 @@
   2. 基于内容（有高分记录）：用 BERT 或 TF-IDF 提取电影语义向量，
      构建用户偏好向量后计算余弦相似度，推荐 Top-K
   3. 混合推荐（评分较多时）：融合内容相似度 + NCF 预测分
+
+RAG 检索：
+  - TF-IDF 索引会保存 vectorizer，可对用户问题做同空间检索
+  - sentence-transformers 索引会保存模型名，查询时懒加载同一模型编码
+  - 旧版仅含 movie_ids/embeddings 的 pkl 会走关键词检索兜底
 """
 
 import os
 import pickle
+import re
 import numpy as np
 
 EMBEDDINGS_PATH = os.path.join(os.path.dirname(__file__), 'models', 'movie_embeddings.pkl')
+ST_MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
 
 # 进程内缓存，避免每次请求都重新加载
-_cache = {'movie_ids': None, 'embeddings': None}
+_cache = {'movie_ids': None, 'embeddings': None, 'meta': None}
+
+# sentence-transformers 懒加载
+_st_model = {'name': None, 'model': None}
 
 
 # ─────────────────────────────────────────────
@@ -52,13 +62,19 @@ def compute_and_save_embeddings(movies):
     embeddings = None
 
     # ── 尝试 BERT ──
+    vectorizer = None
+    backend = None
+    st_model_name = None
+
     try:
         from sentence_transformers import SentenceTransformer
-        print("正在使用 BERT (paraphrase-multilingual-MiniLM-L12-v2) 计算语义向量...")
-        model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+        print(f"正在使用 BERT ({ST_MODEL_NAME}) 计算语义向量...")
+        model = SentenceTransformer(ST_MODEL_NAME)
         embeddings = model.encode(texts, batch_size=32, show_progress_bar=True,
                                   convert_to_numpy=True).astype(np.float32)
         print(f"BERT 编码完成，向量维度: {embeddings.shape}")
+        backend = 'st'
+        st_model_name = ST_MODEL_NAME
     except ImportError:
         pass
 
@@ -69,13 +85,27 @@ def compute_and_save_embeddings(movies):
         vectorizer = TfidfVectorizer(max_features=512, sublinear_tf=True)
         embeddings = vectorizer.fit_transform(texts).toarray().astype(np.float32)
         print(f"TF-IDF 编码完成，向量维度: {embeddings.shape}")
+        backend = 'tfidf'
+
+    bundle = {
+        'movie_ids': movie_ids,
+        'embeddings': embeddings,
+        'backend': backend or 'tfidf',
+        'vectorizer': vectorizer,
+        'st_model_name': st_model_name,
+    }
 
     os.makedirs(os.path.dirname(EMBEDDINGS_PATH), exist_ok=True)
     with open(EMBEDDINGS_PATH, 'wb') as f:
-        pickle.dump({'movie_ids': movie_ids, 'embeddings': embeddings}, f)
+        pickle.dump(bundle, f)
 
     _cache['movie_ids'] = movie_ids
     _cache['embeddings'] = embeddings
+    _cache['meta'] = {
+        'backend': bundle['backend'],
+        'vectorizer': vectorizer,
+        'st_model_name': st_model_name,
+    }
     print(f"已保存 {len(movie_ids)} 部电影的内容向量 → {EMBEDDINGS_PATH}")
     return movie_ids, embeddings
 
@@ -88,11 +118,111 @@ def load_embeddings():
     if os.path.exists(EMBEDDINGS_PATH):
         with open(EMBEDDINGS_PATH, 'rb') as f:
             data = pickle.load(f)
+        if not isinstance(data, dict) or 'movie_ids' not in data:
+            return None, None
         _cache['movie_ids'] = data['movie_ids']
         _cache['embeddings'] = data['embeddings']
+        _cache['meta'] = {
+            'backend': data.get('backend', 'legacy'),
+            'vectorizer': data.get('vectorizer'),
+            'st_model_name': data.get('st_model_name'),
+        }
         return _cache['movie_ids'], _cache['embeddings']
 
     return None, None
+
+
+def _get_st_model(model_name):
+    if _st_model['name'] != model_name or _st_model['model'] is None:
+        from sentence_transformers import SentenceTransformer
+        _st_model['model'] = SentenceTransformer(model_name)
+        _st_model['name'] = model_name
+    return _st_model['model']
+
+
+def _retrieve_rag_movie_ids(query: str, k: int = 8):
+    """根据用户问题检索最相关的电影 id 列表（用于 RAG）。"""
+    movie_ids, embeddings = load_embeddings()
+    if movie_ids is None or embeddings is None:
+        return []
+    meta = _cache.get('meta') or {}
+    backend = meta.get('backend', 'legacy')
+    q = (query or '').strip()
+    if not q:
+        return []
+
+    # TF-IDF：与建库时同一 vectorizer
+    if backend == 'tfidf' and meta.get('vectorizer') is not None:
+        vec = meta['vectorizer']
+        qv = vec.transform([q]).toarray().astype(np.float32)
+        sims = _cosine_similarity(qv, embeddings)
+        top_idx = np.argsort(-sims)[:k]
+        return [movie_ids[int(i)] for i in top_idx]
+
+    # sentence-transformers
+    if backend == 'st' and meta.get('st_model_name'):
+        try:
+            model = _get_st_model(meta['st_model_name'])
+            qv = model.encode([q], convert_to_numpy=True).astype(np.float32)
+            sims = _cosine_similarity(qv.reshape(1, -1), embeddings)
+            top_idx = np.argsort(-sims)[:k]
+            return [movie_ids[int(i)] for i in top_idx]
+        except Exception:
+            pass
+
+    # 旧 pkl 或无可用编码器：关键词兜底
+    return _keyword_retrieve_movie_ids(q, k)
+
+
+def _keyword_retrieve_movie_ids(query: str, k: int):
+    from sqlalchemy import or_
+    from models import Movie
+
+    tokens = [t for t in re.split(r'[\s,，。.!？；;、]+', query) if len(t) >= 2][:6]
+    if not tokens:
+        rows = Movie.query.order_by(Movie.rating.desc()).limit(k).all()
+        return [m.id for m in rows]
+
+    conds = [
+        Movie.title.ilike(f'%{t}%') | Movie.description.ilike(f'%{t}%')
+        for t in tokens
+    ]
+    movies = Movie.query.filter(or_(*conds)).order_by(Movie.rating.desc()).limit(k).all()
+    ids = [m.id for m in movies]
+    if len(ids) < k:
+        seen = set(ids)
+        for m in Movie.query.order_by(Movie.rating.desc()).limit(k * 2).all():
+            if m.id not in seen:
+                ids.append(m.id)
+                seen.add(m.id)
+            if len(ids) >= k:
+                break
+    return ids[:k]
+
+
+def build_rag_context_for_query(query: str, k: int = 6) -> str:
+    """
+    为 LLM 拼装「检索增强」用的纯文本片段（来自站内 Movie 表）。
+    无向量索引时仍可用关键词检索生成片段。
+    """
+    ids = _retrieve_rag_movie_ids(query, k=max(k, 4))
+    if not ids:
+        return ""
+
+    from models import Movie
+
+    movies = Movie.query.filter(Movie.id.in_(ids)).all()
+    order = {mid: i for i, mid in enumerate(ids)}
+    movies.sort(key=lambda m: order.get(m.id, 999))
+
+    lines = []
+    for m in movies:
+        desc = ((m.description or '').replace('\n', ' '))[:320]
+        lines.append(
+            f"《{m.title}》 类型 {m.genre or '未知'} "
+            f"评分约 {m.rating or 0:.1f} 简介摘录：{desc}"
+        )
+    return "\n".join(lines)
 
 
 def embeddings_ready():

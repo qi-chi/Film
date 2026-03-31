@@ -652,7 +652,7 @@
                         </button>
                         {% else %}
                         <button class="seat-btn {{ 'seat-premium' if is_premium else 'seat-standard' }}" 
-                                onclick="toggleSeat(this, {{ row }}, {{ col }}, {{ price }})"
+                                onclick="toggleSeat(this, Number(this.dataset.row), Number(this.dataset.col), Number(this.dataset.price))"
                                 id="seat-{{ row }}-{{ col }}"
                                 data-tooltip="{{ row }}排{{ col }}座 {{ '优选区' if is_premium else '普通区' }} ¥{{ price }}"
                                 data-price="{{ price }}"
@@ -1018,20 +1018,6 @@ document.querySelectorAll('.quick-btn').forEach(btn => {
     });
 });
 
-// 页面加载时初始化已售座位
-document.addEventListener("DOMContentLoaded", function() {
-    {% for s in sold_seats %}
-    var soldBtn = document.getElementById("seat-{{ s.row }}-{{ s.col }}");
-    if (soldBtn) {
-        soldBtn.classList.remove("seat-available", "seat-standard", "seat-premium");
-        soldBtn.classList.add("seat-sold");
-        soldBtn.disabled = true;
-        soldBtn.removeAttribute("onclick");
-        var price = {{ s.price if s.price else 25 }};
-        soldBtn.setAttribute("data-tooltip", "{{ s.row }}排{{ s.col }}座 已售 ¥" + price);
-    }
-    {% endfor %}
-});
 </script>
 
 <!-- 3D预览模态框 -->

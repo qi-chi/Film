@@ -1,6 +1,9 @@
 import os
+import json
 import random
 import urllib.parse
+import urllib.request
+import urllib.error
 import pickle
 import torch
 import re
@@ -14,7 +17,10 @@ from recommender import HeteroRecommender
 
 from werkzeug.utils import secure_filename
 from content_recommender import (
-    compute_and_save_embeddings, get_hybrid_recommendations, embeddings_ready
+    compute_and_save_embeddings,
+    get_hybrid_recommendations,
+    embeddings_ready,
+    build_rag_context_for_query,
 )
 from datetime import datetime, date, timedelta
 import re
@@ -186,8 +192,17 @@ def register():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
+        face_encoding = (request.form.get('face_encoding') or '').strip()
+
+        if not username or not password:
+            flash('请填写完整的用户名和密码。', 'danger')
+            return redirect(url_for('register'))
+
+        if len(password) < 6:
+            flash('密码至少需要 6 位。', 'danger')
+            return redirect(url_for('register'))
         
         if User.query.filter_by(username=username).first():
             flash('用户名已存在，请选择其他用户名。', 'danger')
@@ -197,6 +212,9 @@ def register():
             username=username,
             password_hash=generate_password_hash(password)
         )
+        # 注册页先采集到的人脸特征，随表单一起落库
+        if face_encoding:
+            user.face_encoding = face_encoding
         db.session.add(user)
         db.session.commit()
         flash('注册成功，请登录。', 'success')
@@ -209,8 +227,8 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = (request.form.get('username') or '').strip()
+        password = request.form.get('password') or ''
         
         user = User.query.filter_by(username=username).first()
         if user and check_password_hash(user.password_hash, password):
@@ -253,7 +271,7 @@ def face_login():
         return jsonify({'success': False, 'message': '系统中暂无人脸登录用户，请先注册人脸'})
     
     user_list = [{'id': u.id, 'username': u.username, 'face_encoding': u.face_encoding} for u in users]
-    matched_user, distance, debug_info = find_best_match(result, user_list, tolerance=1.0)
+    matched_user, distance, debug_info = find_best_match(result, user_list, tolerance=0.52)
     
     print(f"人脸匹配调试信息: {debug_info}")
     print(f"最佳匹配距离: {distance}")
@@ -269,9 +287,9 @@ def face_login():
 def face_register():
     from face_auth import extract_face_encoding, encoding_to_json
     
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     image_data = data.get('image')
-    username = data.get('username')
+    username = (data.get('username') or '').strip()
     
     if not image_data:
         return jsonify({'success': False, 'message': '未收到图像数据'})
@@ -279,15 +297,30 @@ def face_register():
     success, result = extract_face_encoding(image_data)
     if not success:
         return jsonify({'success': False, 'message': result})
-    
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return jsonify({'success': False, 'message': '用户不存在'})
-    
-    user.face_encoding = encoding_to_json(result)
-    db.session.commit()
-    
-    return jsonify({'success': True, 'message': '人脸注册成功！'})
+
+    encoding_json = encoding_to_json(result)
+
+    # 场景1：已登录用户（个人中心）直接绑定到当前账号
+    if current_user.is_authenticated:
+        current_user.face_encoding = encoding_json
+        db.session.commit()
+        return jsonify({'success': True, 'message': '人脸注册成功！', 'encoding': encoding_json})
+
+    # 场景2：显式传入用户名且用户已存在时，直接绑定
+    if username:
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify({'success': False, 'message': '用户名不存在，请先完成账号注册'})
+        user.face_encoding = encoding_json
+        db.session.commit()
+        return jsonify({'success': True, 'message': '人脸注册成功！', 'encoding': encoding_json})
+
+    # 场景3：注册页预采集（用户尚未创建），返回 encoding 供后续表单提交
+    return jsonify({
+        'success': True,
+        'message': '人脸采集成功，请继续提交注册',
+        'encoding': encoding_json
+    })
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -639,55 +672,165 @@ def upcoming():
 
 
 # 8. AI 小助手 API（智谱 GLM 接入 · 纯文本无任何格式）
+def _local_ai_reply(user_message):
+    """无第三方依赖的本地助手兜底回复。"""
+    text = (user_message or "").strip()
+    if not text:
+        return "请输入你想咨询的问题。"
+
+    # 影院信息相关
+    if re.search(r'热映|正在上映|院线|最近上映', text):
+        today = date.today().isoformat()
+        cutoff = (date.today() - timedelta(days=90)).isoformat()
+        movies = (
+            Movie.query.filter_by(movie_type='now_playing')
+            .filter(Movie.release_date >= cutoff)
+            .filter(Movie.release_date <= today)
+            .order_by(Movie.rating.desc())
+            .limit(5)
+            .all()
+        )
+        if not movies:
+            return "当前暂无正在热映的影片，你可以先看看高分推荐。"
+        names = "、".join([m.title for m in movies])
+        return f"最近热映我推荐你看看：{names}。如果你告诉我喜欢的类型，我可以再细化。"
+
+    if re.search(r'即将|快上映|要上映|新片', text):
+        today = date.today().isoformat()
+        movies = (
+            Movie.query.filter_by(movie_type='upcoming')
+            .filter(Movie.release_date >= today)
+            .order_by(Movie.release_date.asc())
+            .limit(5)
+            .all()
+        )
+        if not movies:
+            return "当前还没有可展示的即将上映影片，稍后我再帮你查。"
+        names = "、".join([m.title for m in movies])
+        return f"即将上映的片子可以关注：{names}。想看哪种风格我可以继续帮你筛。"
+
+    # 个性化推荐（无额外依赖也可运行，向量未就绪会自动降级冷启动）
+    if re.search(r'推荐|看什么|想看|有什么好看|电影', text):
+        ratings = Rating.query.filter_by(user_id=current_user.id).all()
+        all_movies = Movie.query.all()
+        recs, rec_type = get_hybrid_recommendations(ratings, all_movies, n=5)
+        if recs:
+            names = "、".join([m.title for m, _ in recs])
+            if rec_type == 'hybrid':
+                return f"结合你的观影记录，我建议你先看：{names}。这些是综合相似度和偏好强度筛出来的。"
+            if rec_type == 'content':
+                return f"按你最近偏好，我推荐：{names}。如果你告诉我更具体口味，我还能再收窄。"
+            return f"你可以先从这些高口碑电影开始：{names}。后续你多评分，我会推荐得更准。"
+        return "我先没拿到合适候选片，你可以告诉我喜欢的类型，比如科幻、悬疑、爱情，我马上给你定向推荐。"
+
+    # 按类型快速检索
+    genre_map = {
+        "科幻": "科幻",
+        "悬疑": "悬疑",
+        "爱情": "爱情",
+        "动作": "动作",
+        "喜剧": "喜剧",
+        "恐怖": "恐怖",
+        "动画": "动画",
+        "犯罪": "犯罪",
+        "剧情": "剧情",
+    }
+    for k, g in genre_map.items():
+        if k in text:
+            movies = (
+                Movie.query.filter(Movie.genre.like(f"%{g}%"))
+                .order_by(Movie.rating.desc())
+                .limit(5)
+                .all()
+            )
+            if not movies:
+                return f"我暂时没找到合适的{g}片单，你可以换个类型试试。"
+            names = "、".join([m.title for m in movies])
+            return f"你喜欢{g}的话，我建议你看看：{names}。"
+
+    return "我可以帮你做电影推荐、查热映和即将上映，也可以按类型找片。你可以直接说，比如推荐几部悬疑片。"
+
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def ai_chat():
-    try:
-        from zhipuai import ZhipuAI
-    except:
-        return jsonify({'reply': 'AI 服务未就绪，请检查依赖包'})
-    
-    data = request.get_json()
-    user_message = data.get('message', '').strip()
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get('message') or '').strip()
 
     if not user_message:
-        return jsonify({'reply': '请输入你想咨询的问题~'})
+        return jsonify({'reply': '请输入你想咨询的问题~', 'source': 'local', 'rag_used': False})
 
+    # 先给出本地兜底回复，确保无任何额外依赖也可用
+    reply = _local_ai_reply(user_message)
+    source = "local"
+
+    # 可选增强：配置了 API Key 时，优先走智谱 HTTP API（无需 zhipuai 依赖）
+    rag_context = ""
+    rag_used = False
     try:
-        # ========== 智谱 AI 环境变量版本（可直接提交Git）==========
-        API_KEY = "6dbadc5c65a94b859b25667f09c6b2d9.waMFgK68iijarq5a"
-        client = ZhipuAI(api_key=API_KEY)
-
-
-
-        
-        
-        response = client.chat.completions.create(
-            model="glm-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "你是电影推荐助手，只能用纯自然口语中文回答，绝对禁止使用任何 Markdown 格式，禁止使用 ## ** - 等任何符号，不要标题，不要列表，不要加粗，只用正常段落文字回答。"
+        api_key = os.getenv("ZHIPU_API_KEY")
+        if api_key:
+            # RAG：从自建电影库检索相关片段，减少胡编
+            rag_context = build_rag_context_for_query(user_message, k=6)
+            rag_used = bool(rag_context)
+            system_content = (
+                "你是电影推荐助手，只能用纯自然口语中文回答，绝对禁止使用任何 Markdown 格式，"
+                "禁止使用 ## ** - 等任何符号，不要标题，不要列表，不要加粗，只用正常段落文字回答。"
+            )
+            if rag_used:
+                system_content += (
+                    " 接下来我会提供站内电影资料摘录，请优先根据摘录作答；"
+                    "摘录中没有的信息请明确说资料里没有，不要编造片名或剧情细节。"
+                )
+            user_content = user_message
+            if rag_used:
+                user_content = (
+                    f"站内电影资料摘录如下：\n{rag_context}\n\n用户问题：{user_message}"
+                )
+            payload = {
+                "model": "glm-4",
+                "messages": [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content},
+                ],
+                "temperature": 0.7,
+            }
+            req = urllib.request.Request(
+                url="https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
                 },
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.7,
-        )
-        
-        reply = response.choices[0].message.content.strip()
-        
-        # 强制清理所有格式符号，确保 100% 干净文本
-        reply = reply.replace("**", "")
-        reply = reply.replace("## ", "")
-        reply = reply.replace("- ", "")
-        reply = reply.replace("### ", "")
-        reply = reply.replace("* ", "")
-        reply = reply.replace("> ", "")
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read().decode("utf-8")
+            data = json.loads(body)
+            cloud_reply = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            if cloud_reply:
+                cloud_reply = cloud_reply.replace("**", "")
+                cloud_reply = cloud_reply.replace("## ", "")
+                cloud_reply = cloud_reply.replace("- ", "")
+                cloud_reply = cloud_reply.replace("### ", "")
+                cloud_reply = cloud_reply.replace("* ", "")
+                cloud_reply = cloud_reply.replace("> ", "")
+                reply = cloud_reply
+                source = "zhipu"
+    except Exception:
+        # 云端失败时静默回退到本地助手
+        pass
 
-    except Exception as e:
-        reply = "AI 小助手暂时无法服务，请稍后再试"
-
-    return jsonify({'reply': reply})
+    return jsonify({
+        'reply': reply,
+        'source': source,
+        'rag_used': rag_used,
+    })
 
 # 11. 圈子功能
 from models import Circle, CircleMember, CirclePost, CircleComment
