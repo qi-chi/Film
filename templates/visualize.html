@@ -83,6 +83,75 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
+
+    /* 地图容器样式 */
+    #wuhanCinemaMap {
+        width: 100%;
+        height: 600px;
+        border-radius: 0 0 20px 20px;
+        position: relative;
+        overflow: hidden;
+        background: #1a1a2e;
+    }
+
+    /* 影院标记样式 */
+    .cinema-marker {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background: #ff4444;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        box-shadow: 0 0 10px rgba(255,60,60,0.8);
+        cursor: pointer;
+        transform: translate(-50%, -100%);
+        z-index: 10;
+        transition: all 0.2s ease;
+    }
+
+    .cinema-marker:hover {
+        transform: translate(-50%, -100%) scale(1.3);
+        box-shadow: 0 0 15px rgba(255,60,60,1);
+    }
+
+    /* 标记信息弹窗 */
+    .marker-info {
+        position: absolute;
+        background: #1a1a2e;
+        border: 1px solid rgba(255,255,255,0.1);
+        padding: 12px 16px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        z-index: 20;
+        display: none;
+        min-width: 220px;
+        backdrop-filter: blur(8px);
+    }
+
+    .marker-info h5 {
+        margin: 0 0 8px;
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .marker-info p {
+        margin: 0 0 8px;
+        color: rgba(255,255,255,0.7);
+        font-size: 0.85rem;
+    }
+
+    .marker-info a {
+        color: #ff9800;
+        font-weight: bold;
+        text-decoration: none;
+        font-size: 0.85rem;
+        transition: color 0.2s ease;
+    }
+
+    .marker-info a:hover {
+        color: #ffc107;
+    }
 </style>
 
 <div class="page-header text-center mt-4">
@@ -110,7 +179,6 @@
 </div>
 
 <div class="row g-4 mb-4">
-    <!-- 折线图：年度趋势 -->
     <div class="col-md-8">
         <div class="viz-card">
             <div class="viz-card-header">
@@ -122,8 +190,6 @@
             </div>
         </div>
     </div>
-
-    <!-- 饼图：流派分布 -->
     <div class="col-md-4">
         <div class="viz-card">
             <div class="viz-card-header">
@@ -138,7 +204,6 @@
 </div>
 
 <div class="row g-4 mb-5">
-    <!-- 柱状图：评分分布 -->
     <div class="col-12">
         <div class="viz-card">
             <div class="viz-card-header">
@@ -151,9 +216,29 @@
         </div>
     </div>
 </div>
+
+<div class="row g-4 mb-5">
+    <div class="col-12">
+        <div class="viz-card">
+            <div class="viz-card-header">
+                <div class="viz-icon" style="background: rgba(255,159,67,0.2); color: var(--accent-color);"><i class="fas fa-map-marker-alt"></i></div>
+                <h5>武汉影院分布</h5>
+            </div>
+            <div class="viz-card-body">
+                <div id="wuhanCinemaMap">
+                    <img src="https://restapi.amap.com/v3/staticmap?location=114.30,30.58&zoom=11&size=1000*600&key=6473da94204bc215a7d2f2fb9ce3b2b0"
+     style="width:100%;height:100%;position:absolute;top:0;left:0;z-index:1;object-fit:cover;" 
+                         alt="武汉地图">
+                    <div class="marker-info" id="markerInfo"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script>
 const DARK_THEME = {
     backgroundColor: 'transparent',
@@ -174,7 +259,6 @@ document.addEventListener("DOMContentLoaded", function () {
     fetch('/api/chart-data')
         .then(res => res.json())
         .then(data => {
-            // 统计数字
             const totalMovies = data.year_counts ? data.year_counts.reduce((a,b)=>a+b,0) : 0;
             document.getElementById('statTotalMovies').textContent = totalMovies.toLocaleString();
             document.getElementById('statGenreCount').textContent = data.genres ? data.genres.length : '—';
@@ -297,6 +381,82 @@ document.addEventListener("DOMContentLoaded", function () {
         });
         window.addEventListener('resize', () => chart.resize());
     }
+
+    // ===================== 武汉影院地图 =====================
+    const mapContainer = document.getElementById('wuhanCinemaMap');
+    const markerInfo = document.getElementById('markerInfo');
+    let markers = [];
+
+    const cinemas = [
+        {"id":1,"name":"华夏易悦影城(三阳中心店)","address":"三阳路88号","lng":114.315,"lat":30.595},
+        {"id":2,"name":"新拾光影城","address":"车站街长青广场e座六艺园四楼","lng":114.312,"lat":30.592},
+        {"id":3,"name":"看吧私影","address":"武汉数码港西北门旁","lng":114.298,"lat":30.588},
+        {"id":4,"name":"中百国际影城(江汉路中心百货店)","address":"江汉路步行街129号","lng":114.305,"lat":30.585},
+        {"id":5,"name":"万达影城(江汉路prime激光店)","address":"交通路1号江汉印象城C座","lng":114.302,"lat":30.583},
+        {"id":6,"name":"新璇宫影城(璇宫饭店店)","address":"江汉一路45-47号璇宫饭店","lng":114.308,"lat":30.586},
+        {"id":7,"name":"中影影城(大洋中心店)","address":"武汉大洋中心(中影影城)A馆6楼","lng":114.303,"lat":30.584},
+        {"id":8,"name":"好好放映","address":"台北路155号武汉影城写字楼11楼","lng":114.295,"lat":30.590},
+        {"id":9,"name":"百丽宫影城LEDMAX(滨江天街·吉星悦店)","address":"徐家棚街道秦园路63号","lng":114.335,"lat":30.575},
+        {"id":10,"name":"巨幕影城(武汉绿地·新田360店)","address":"武昌区徐家棚社区临江大道606号","lng":114.340,"lat":30.570},
+        {"id":11,"name":"万象影城(武汉万象城店)","address":"建设大道668号武汉万象城","lng":114.285,"lat":30.595},
+        {"id":12,"name":"CGV影城(武昌万象城店)","address":"和平大道619号武汉武昌万象城L6层","lng":114.330,"lat":30.580}
+    ];
+
+    const wuhanBounds = {
+        minLng: 114.25, maxLng: 114.35,
+        minLat: 30.55, maxLat: 30.60
+    };
+
+    function lngLatToPixel(lng, lat, containerWidth, containerHeight) {
+        const x = ((lng - wuhanBounds.minLng) / (wuhanBounds.maxLng - wuhanBounds.minLng)) * containerWidth;
+        const y = ((wuhanBounds.maxLat - lat) / (wuhanBounds.maxLat - wuhanBounds.minLat)) * containerHeight;
+        return {x, y};
+    }
+
+    function clearMarkers() {
+        markers.forEach(m => m.remove());
+        markers = [];
+    }
+
+    function createMarkers() {
+        const containerWidth = mapContainer.offsetWidth;
+        const containerHeight = mapContainer.offsetHeight;
+        if (containerWidth === 0 || containerHeight === 0) return;
+        clearMarkers();
+        cinemas.forEach(ci => {
+            const {x, y} = lngLatToPixel(ci.lng, ci.lat, containerWidth, containerHeight);
+            const marker = document.createElement('div');
+            marker.className = 'cinema-marker';
+            marker.style.left = `${x}px`;
+            marker.style.top = `${y}px`;
+            marker.dataset.id = ci.id;
+            marker.dataset.name = ci.name;
+            marker.dataset.address = ci.address;
+            marker.addEventListener('click', (e) => {
+                e.stopPropagation();
+                markerInfo.innerHTML = `
+                    <h5>${marker.dataset.name}</h5>
+                    <p>📍 ${marker.dataset.address}</p>
+                    <a href="/cinema/${marker.dataset.id}">查看影院详情</a>
+                `;
+                markerInfo.style.left = `${x + 15}px`;
+                markerInfo.style.top = `${y - 10}px`;
+                markerInfo.style.display = 'block';
+            });
+            mapContainer.appendChild(marker);
+            markers.push(marker);
+        });
+    }
+
+    // 使用 ResizeObserver 监听容器大小变化
+    const resizeObserver = new ResizeObserver(() => createMarkers());
+    resizeObserver.observe(mapContainer);
+    window.addEventListener('resize', () => createMarkers());
+    window.addEventListener('load', () => createMarkers());
+
+    mapContainer.addEventListener('click', () => {
+        markerInfo.style.display = 'none';
+    });
 });
 </script>
 {% endblock %}
