@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-white mb-4">武汉影院</h2>
+
+    <!-- 搜索框 -->
+    <div class="mb-4">
+        <form method="GET" action="{{ url_for('cinemas') }}">
+            <input 
+                id="search" 
+                name="q"
+                value="{{ search_query }}"
+                class="form-control bg-dark text-white border-0 rounded-pill" 
+                placeholder="搜索影院名/地址/影片名"
+                style="height: 50px; padding-left: 45px; background-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2218%22 height=%2218%22 fill=%22%23999%22 viewBox=%220 0 16 16%22%3E%3Cpath d=%22M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z%22/%3E%3C/svg%3E'); background-repeat: no-repeat; background-position: 16px center;"
+            >
+        </form>
+    </div>
+
+    <!-- 排序按钮（统一轮廓样式，不同边框颜色） -->
+    <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-outline-custom rounded-pill px-4" id="sort-all" style="border-color: #ffc107; color: #ffc107;">全部</button>
+        <button class="btn btn-outline-custom rounded-pill px-4" id="sort-rating" style="border-color: #20c997; color: #20c997;">好评优先</button>
+        <button class="btn btn-outline-custom rounded-pill px-4" id="sort-distance" style="border-color: #6f42c1; color: #6f42c1;">距离最近</button>
+    </div>
+
+    <!-- 影院卡片 -->
+    <div class="row g-4" id="cinema-list">
+        {% for c in cinemas %}
+        <div class="col-6 col-md-4 col-lg-3 cinema-item">
+            <div class="card bg-dark-transparent border-0 rounded-20 p-4 h-100 cinema-card">
+                <h5 class="text-white mb-2">{{ c.name }}</h5>
+                <p class="text-muted small mb-1">{{ c.area }}</p>
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <span class="text-warning">⭐ {{ c.rating }}</span>
+                    <a href="/cinema/{{ c.id }}" class="btn btn-cinema rounded-pill px-4">查看影院</a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<style>
+.cinema-card {
+    transition: all 0.3s ease;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.cinema-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.25);
+    border-color: #ffc107 !important;
+}
+
+/* 统一排序按钮样式 */
+.btn-outline-custom {
+    background-color: transparent;
+    border-width: 2px;
+    transition: all 0.3s ease;
+}
+.btn-outline-custom:hover {
+    background-color: rgba(255,255,255,0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.btn-outline-custom:active {
+    transform: translateY(0);
+}
+
+/* 查看影院按钮样式 */
+.btn-cinema {
+    background-color: #0d6efd;
+    color: #fff;
+    border: none;
+    transition: all 0.3s ease;
+}
+.btn-cinema:hover {
+    background-color: #0b5ed7;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(13,110,253,0.3);
+}
+.btn-cinema:active {
+    transform: translateY(0);
+}
+</style>
+
+<script>
+// 搜索功能
+document.getElementById("search").addEventListener("input", function(e) {
+    const kw = e.target.value.toLowerCase();
+    const items = document.querySelectorAll(".cinema-item");
+    items.forEach(item => {
+        const text = item.innerText.toLowerCase();
+        item.style.display = text.includes(kw) ? "block" : "none";
+    });
+});
+
+// 全部影院按钮
+document.getElementById('sort-all').addEventListener('click', () => {
+    location.href = "{{ url_for('cinemas') }}";
+});
+
+// 好评优先排序
+document.getElementById("sort-rating").onclick = () => {
+    const list = document.getElementById("cinema-list");
+    const items = Array.from(list.children);
+    items.sort((a, b) => {
+        const r1 = parseFloat(a.querySelector(".text-warning").innerText.replace("⭐", ""));
+        const r2 = parseFloat(b.querySelector(".text-warning").innerText.replace("⭐", ""));
+        return r2 - r1;
+    });
+    items.forEach(i => list.appendChild(i));
+};
+
+// 距离最近排序（模拟随机）
+document.getElementById("sort-distance").onclick = () => {
+    const list = document.getElementById("cinema-list");
+    const items = Array.from(list.children);
+    items.sort(() => Math.random() - 0.5);
+    items.forEach(i => list.appendChild(i));
+};
+</script>
+{% endblock %}

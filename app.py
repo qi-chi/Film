@@ -12,7 +12,7 @@ import click  # 添加这行导入
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Movie, Favorite, Comment, Rating
+from models import db, User, Movie, Favorite, Comment, Rating , Cinema
 from recommender import HeteroRecommender
 
 from werkzeug.utils import secure_filename
@@ -1561,6 +1561,99 @@ def api_pay_seats(movie_id):
         db.session.rollback()
         return jsonify({'success': False, 'message': str(e)})
 
+# ===================== 影院功能（最终稳定版） =====================
+@app.route("/create-cinema-table")
+def create_table():
+    with app.app_context():
+        db.create_all()
+    return "✅ 表创建成功！现在去访问 /import-cinemas"
+
+@app.route("/import-cinemas")
+def import_data():
+    data = [
+{"name":"华夏易悦影城(三阳中心店)","address":"三阳路88号独立上盖匠心城三阳中心B座3-5f-005-sp号","area":"江岸区","rating":"4.6","tel":""},
+{"name":"新拾光影城","address":"车站街长青广场e座六艺园四楼","area":"江岸区","rating":"4.4","tel":""},
+{"name":"看吧私影","address":"武汉数码港西北门旁","area":"江汉区","rating":"4.2","tel":""},
+{"name":"中百国际影城(江汉路中心百货店)","address":"江汉路步行街129号中心百货7楼","area":"江汉区","rating":"4.7","tel":""},
+{"name":"万达影城(江汉路prime激光店)","address":"交通路1号江汉印象城C座2层","area":"江汉区","rating":"4.8","tel":""},
+{"name":"新璇宫影城(璇宫饭店店)","address":"江汉一路45-47号璇宫饭店5层","area":"江汉区","rating":"4.5","tel":""},
+{"name":"中影影城(大洋中心店)","address":"武汉大洋中心(中影影城)A馆6楼(循礼门地铁站A口步行490米)","area":"江汉区","rating":"4.6","tel":""},
+{"name":"好好放映","address":"台北路155号武汉影城写字楼11楼1101室","area":"江汉区","rating":"4.3","tel":""},
+{"name":"百丽宫影城LEDMAX(滨江天街·吉星悦店)","address":"徐家棚街道秦园路63号龙湖滨江天街6层","area":"武昌区","rating":"4.7","tel":""},
+{"name":"巨幕影城(武汉绿地·新田360店)","address":"武昌区徐家棚社区临江大道606号绿地新田360-6层","area":"武昌区","rating":"4.8","tel":""},
+{"name":"万象影城(武汉万象城店)","address":"建设大道668号武汉万象城6层(取水楼地铁站出入口旁)","area":"江岸区","rating":"4.9","tel":""},
+{"name":"CGV影城(武昌万象城店)","address":"和平大道619号(三角路地铁站C口旁)武汉武昌万象城L6层","area":"武昌区","rating":"4.7","tel":""}
+    ]
+
+    for item in data:
+        c = Cinema(
+            name=item["name"],
+            address=item["address"],
+            area=item["area"],
+            rating=float(item["rating"]),
+            tel=item["tel"]
+        )
+        db.session.add(c)
+    
+    try:
+        db.session.commit()
+        return "✅ 导入成功！现在访问 /cinemas"
+    except:
+        db.session.rollback()
+        return "⚠️ 导入失败"
+
+# 影院列表页（修复关联关系+支持按影片名搜索）
+@app.route("/cinemas")
+def cinemas():
+    search_query = request.args.get("q", "").strip()
+    if search_query:
+        # 1. 先搜索包含该影片名的电影
+        matched_movies = Movie.query.filter(Movie.title.contains(search_query)).all()
+        movie_ids = [m.id for m in matched_movies]
+        
+        # 2. 修复：因为没有movies关联，直接按影院名/地址搜索（兼容你的模型）
+        cinemas = Cinema.query.filter(
+            (Cinema.name.contains(search_query)) | 
+            (Cinema.address.contains(search_query))
+        ).all()
+    else:
+        # 无搜索词，返回所有影院
+        cinemas = Cinema.query.all()
+    return render_template("cinemas.html", cinemas=cinemas, search_query=search_query)
+
+# 影院详情页（区分热映/待映+增加影片数量）
+@app.route("/cinema/<int:cinema_id>")
+def cinema_detail(cinema_id):
+    cinema = Cinema.query.get_or_404(cinema_id)
+    all_movies = Movie.query.all()
+    import random
+    random.shuffle(all_movies)
+    
+    # 模拟拆分：前6部为热映，后6部为即将上映（可根据实际字段调整）
+    # 若后续你的Movie模型有上映状态字段，可替换为：
+    hot_movies = all_movies[:8]   # 正在上映
+    upcoming_movies = all_movies[8:16]  # 即将上映
+    # hot_movies = all_movies[:6]  # 热映6部
+    # upcoming_movies = all_movies[6:12]  # 即将上映6部
+    
+    return render_template(
+        "cinema_detail.html",
+        cinema=cinema,
+        hot_movies=hot_movies,
+        upcoming_movies=upcoming_movies
+    )
+
+# 影院数据API（供地图可视化使用）
+@app.route("/api/cinemas")
+def api_cinemas():
+    cinemas = Cinema.query.all()
+    return jsonify([{
+        "id": c.id,
+        "name": c.name,
+        "address": c.address,
+        "area": c.area,
+        "rating": c.rating
+    } for c in cinemas])
 # ------------------------------
 # ✅ 新增：座位模型（不影响原有表）
 # ------------------------------

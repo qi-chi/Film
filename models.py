@@ -119,3 +119,14 @@ class Seat(db.Model):
     price = db.Column(db.Integer, default=25)
     
     movie = db.relationship('Movie', backref=db.backref('seats', lazy=True))
+
+# ------------------- 影院表（最终稳定版） -------------------
+class Cinema(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200))
+    address = db.Column(db.Text)
+    area = db.Column(db.String(50))
+    rating = db.Column(db.Float)
+    tel = db.Column(db.String(200))
+    lng = db.Column(db.Float)   # 经度
+    lat = db.Column(db.Float)   # 纬度

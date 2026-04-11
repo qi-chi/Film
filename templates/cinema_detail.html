@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% block title %}{{ cinema.name }} - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    .cinema-header {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 20px;
+        padding: 32px;
+        margin-bottom: 32px;
+    }
+
+    .cinema-title {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #fff;
+        margin-bottom: 16px;
+    }
+
+    .cinema-info-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: rgba(255,255,255,0.7);
+        margin-bottom: 12px;
+        font-size: 1rem;
+    }
+
+    .cinema-info-item i {
+        color: var(--accent-color);
+        font-size: 1.2rem;
+        width: 24px;
+        text-align: center;
+    }
+
+    .map-btn {
+        background: linear-gradient(135deg, #ffc107, #ff9800);
+        color: #000;
+        font-weight: bold;
+        border: none;
+        border-radius: 50px;
+        padding: 14px 32px;
+        font-size: 1.1rem;
+        transition: all 0.3s ease;
+        margin-top: 20px;
+    }
+
+    .map-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(255,152,0,0.4);
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #fff;
+        margin: 32px 0 20px;
+        padding-left: 8px;
+        border-left: 4px solid var(--accent-color);
+    }
+
+    /* 复用首页电影卡片样式 */
+    .movie-grid-card {
+        border-radius: 16px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+        cursor: pointer;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .movie-grid-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        border-color: rgba(255,159,67,0.25);
+    }
+
+    .movie-grid-card .poster-wrap {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .movie-grid-card img {
+        width: 100%;
+        height: 300px;
+        object-fit: cover;
+        display: block;
+        transition: transform 0.5s ease;
+    }
+
+    .movie-grid-card:hover img {
+        transform: scale(1.06);
+    }
+
+    .movie-rating-badge {
+        position: absolute;
+        top: 10px; left: 10px;
+        background: rgba(0,0,0,0.7);
+        border: 1px solid rgba(255,193,7,0.4);
+        color: #ffc107;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 4px 9px;
+        border-radius: 20px;
+        backdrop-filter: blur(4px);
+    }
+
+    .movie-year-badge {
+        position: absolute;
+        top: 10px; right: 10px;
+        background: rgba(0,0,0,0.65);
+        color: rgba(255,255,255,0.7);
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 4px 9px;
+        border-radius: 20px;
+        backdrop-filter: blur(4px);
+    }
+
+    .movie-grid-info {
+        padding: 14px 15px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .movie-grid-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 6px;
+    }
+
+    .movie-grid-genre {
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.4);
+        margin-bottom: 12px;
+        flex: 1;
+    }
+
+    .movie-grid-btn {
+        display: block;
+        text-align: center;
+        padding: 8px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.7);
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .movie-grid-btn:hover {
+        background: rgba(255,159,67,0.15);
+        border-color: rgba(255,159,67,0.35);
+        color: var(--accent-color);
+    }
+
+    /* 地图弹窗样式 */
+    #mapModal .modal-content {
+        background: #1a1a2e;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 20px;
+    }
+
+    #mapModal .modal-header {
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #mapModal .modal-title {
+        color: #fff;
+    }
+
+    #cinemaMapContainer {
+        position: relative;
+        width: 100%;
+        height: 500px;
+        background: #1a1a2e;
+    }
+    #cinemaMapContainer img {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        object-fit: cover;
+        z-index: 1;
+    }
+    #amapJumpBtn {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        z-index: 2;
+        background: #00a8ff;
+        color: #fff;
+        border: none;
+        border-radius: 50px;
+        padding: 10px 20px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+</style>
+
+<div class="container mt-4">
+    <!-- 影院信息卡片 -->
+    <div class="cinema-header">
+        <h1 class="cinema-title">{{ cinema.name }}</h1>
+        <div class="cinema-info-item">
+            <i class="fas fa-map-marker-alt"></i>
+            <span>{{ cinema.address }}</span>
+        </div>
+        <div class="cinema-info-item">
+            <i class="fas fa-phone"></i>
+            <span>{{ cinema.phone or '暂无电话' }}</span>
+        </div>
+        <div class="cinema-info-item">
+            <i class="fas fa-star"></i>
+            <span>评分：{{ cinema.rating }}</span>
+        </div>
+        <button type="button" class="map-btn" data-bs-toggle="modal" data-bs-target="#mapModal">
+            <i class="fas fa-map-marker-alt me-2"></i>查看影院位置
+        </button>
+    </div>
+
+    <!-- 地图弹窗 -->
+<div class="modal fade" id="mapModal" tabindex="-1" aria-labelledby="mapModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="mapModalLabel">影院位置：{{ cinema.name }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0" style="position: relative; min-height: 500px;">
+                <div id="cinemaMapContainer" style="position: relative; width: 100%; height: 500px; background: #1a1a2e;">
+                    <img id="amapStaticMap"
+                         src="https://restapi.amap.com/v3/staticmap?location={{ cinema.lng | default(114.30) }},{{ cinema.lat | default(30.58) }}&zoom=15&size=800*500&markers=mid,,A:{{ cinema.lng | default(114.30) }},{{ cinema.lat | default(30.58) }}&key=6473da94204bc215a7d2f2fb9ce3b2b0"
+                         alt="影院位置地图"
+                         style="width:100%; height:100%; object-fit: cover; position: absolute; top:0; left:0; z-index:1;"
+                         onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%25\' height=\'100%25\'%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'%23222\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' dominant-baseline=\'middle\' text-anchor=\'middle\' fill=\'%23aaa\' font-size=\'14\'%3E地图加载失败%3C/text%3E%3C/svg%3E';">
+                    <a href="https://ditu.amap.com/search?query={{ cinema.address | urlencode }}" 
+   target="_blank" 
+   id="amapJumpBtn" 
+   style="position: absolute; bottom: 20px; right: 20px; z-index: 2; background: #00a8ff; color: #fff; border: none; border-radius: 50px; padding: 10px 20px; font-weight: bold; cursor: pointer; text-decoration: none; display: inline-block;">
+    在高德地图查看
+</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+    <!-- 正在上映区域 -->
+    <h2 class="section-title">正在上映</h2>
+    <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-5">
+        {% for movie in hot_movies %}
+        <div class="col">
+            <div class="movie-grid-card">
+                <div class="poster-wrap">
+                    <img src="{{ movie.poster_url if movie.poster_url else 'https://placehold.co/300x450/1a1a2e/ffffff?text=' + movie.title | urlencode }}" 
+     alt="{{ movie.title }}" 
+     loading="lazy">
+                    <div class="movie-rating-badge"><i class="fas fa-star me-1"></i>{{ movie.rating }}</div>
+                    <div class="movie-year-badge">{{ movie.release_year }}</div>
+                </div>
+                <div class="movie-grid-info">
+                    <div class="movie-grid-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                    <div class="movie-grid-genre"><i class="fas fa-tag me-1"></i>{{ movie.genre }}</div>
+                    <a href="{{ url_for('movie_detail', movie_id=movie.id) }}" class="movie-grid-btn">
+                        <i class="fas fa-play-circle me-1"></i>查看详情
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-film fa-3x mb-3 opacity-30"></i>
+                <h5 class="text-white">该影院暂无正在上映影片</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- 即将上映区域 -->
+    <h2 class="section-title">即将上映</h2>
+    <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3 mb-5">
+        {% for movie in upcoming_movies %}
+        <div class="col">
+            <div class="movie-grid-card">
+                <div class="poster-wrap">
+                    <img src="{{ movie.poster_url if movie.poster_url else 'https://placehold.co/300x450/1a1a2e/ffffff?text=' + movie.title | urlencode }}" 
+     alt="{{ movie.title }}" 
+     loading="lazy">
+                    <div class="movie-rating-badge"><i class="fas fa-star me-1"></i>{{ movie.rating }}</div>
+                    <div class="movie-year-badge">{{ movie.release_year }}</div>
+                </div>
+                <div class="movie-grid-info">
+                    <div class="movie-grid-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                    <div class="movie-grid-genre"><i class="fas fa-tag me-1"></i>{{ movie.genre }}</div>
+                    <a href="{{ url_for('movie_detail', movie_id=movie.id) }}" class="movie-grid-btn">
+                        <i class="fas fa-play-circle me-1"></i>查看详情
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-clock fa-3x mb-3 opacity-30"></i>
+                <h5 class="text-white">该影院暂无即将上映影片</h5>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+
+document.addEventListener("DOMContentLoaded", function() {
+    const mapModal = document.getElementById('mapModal');
+    if (mapModal) {
+        mapModal.addEventListener('shown.bs.modal', function() {
+            const img = mapModal.querySelector('img');
+            if (img && img.complete === false) {
+                img.src = img.src; // 刷新图片（可选）
+            }
+        });
+    }
+});
+
+</script>
+{% endblock %}
