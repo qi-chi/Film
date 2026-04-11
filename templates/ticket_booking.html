@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}选座购票 - 锁定心仪座位{% endblock %}
+{% block content %}
+<style>
+    /* 继承首页基础样式并适配购票页面 */
+    .booking-section-title {
+        text-align: center;
+        color: #fff;
+        font-weight: 700;
+        margin: 16px 0 8px;
+        font-size: 1.5rem;
+    }
+
+    .booking-section-desc {
+        text-align: center;
+        color: rgba(255,255,255,0.4);
+        margin-bottom: 32px;
+        font-size: 0.9rem;
+    }
+
+    /* 电影卡片（复用首页风格并微调） */
+    .booking-movie-card {
+        border-radius: 16px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+        cursor: pointer;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .booking-movie-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        border-color: rgba(255,159,67,0.25);
+    }
+
+    .booking-movie-card .poster-wrap {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .booking-movie-card img {
+        width: 100%;
+        height: 300px;
+        object-fit: cover;
+        display: block;
+        transition: transform 0.5s ease;
+    }
+
+    .booking-movie-card:hover img {
+        transform: scale(1.06);
+    }
+
+    /* 评分角标（复用首页样式） */
+    .movie-rating-badge {
+        position: absolute;
+        top: 10px; left: 10px;
+        background: rgba(0,0,0,0.7);
+        border: 1px solid rgba(255,193,7,0.4);
+        color: #ffc107;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 4px 9px;
+        border-radius: 20px;
+        backdrop-filter: blur(4px);
+    }
+
+    /* 上映时间角标（适配首页年份角标样式） */
+    .movie-date-badge {
+        position: absolute;
+        top: 10px; right: 10px;
+        background: rgba(0,0,0,0.65);
+        color: rgba(255,255,255,0.7);
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 4px 9px;
+        border-radius: 20px;
+        backdrop-filter: blur(4px);
+    }
+
+    .booking-movie-info {
+        padding: 14px 15px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .booking-movie-title {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-bottom: 6px;
+    }
+
+    .booking-movie-genre {
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.4);
+        margin-bottom: 12px;
+        flex: 1;
+    }
+
+    /* 购票按钮（复用首页按钮交互） */
+    .booking-btn {
+        display: block;
+        text-align: center;
+        padding: 8px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent-color), #ff6b6b);
+        border: none;
+        color: #000;
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 700;
+        transition: all 0.2s;
+        cursor: pointer;
+    }
+
+    .booking-btn:hover {
+        filter: brightness(1.1);
+        transform: scale(1.03);
+        color: #000;
+        text-decoration: none;
+    }
+
+    /* 分隔线样式 */
+    .section-divider {
+        border: none;
+        height: 1px;
+        background: rgba(255,255,255,0.1);
+        margin: 40px 0;
+    }
+</style>
+
+<!-- 页面标题（适配首页视觉风格） -->
+<h2 class="booking-section-title">选座购票 - 锁定心仪座位</h2>
+<p class="booking-section-desc">最新热映&即将上映影片，一键选座不排队</p>
+
+<!-- 正在上映模块 -->
+<div class="container mb-8">
+    <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3">
+        {% for movie in now_showing %}
+        <div class="col">
+            <div class="booking-movie-card">
+                <div class="poster-wrap">
+                    <img src="{{ movie.poster_url }}" alt="{{ movie.title }}" loading="lazy">
+                    <div class="movie-rating-badge"><i class="fas fa-star me-1"></i>{{ movie.rating_virtual }}</div>
+                    <div class="movie-date-badge">热映中</div>
+                </div>
+                <div class="booking-movie-info">
+                    <div class="booking-movie-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                    <div class="booking-movie-genre"><i class="fas fa-tag me-1"></i>{{ movie.genre }}</div>
+                    <a href="{{ url_for('seat_selection', movie_id=movie.id) }}" class="booking-btn">
+                        <i class="fas fa-ticket-alt me-1"></i>选座&购票
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="empty-search">
+                <i class="fas fa-film"></i>
+                <h5 class="text-white">暂无正在上映的影片</h5>
+                <p>敬请期待最新上映影片</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- 分隔线 -->
+<hr class="section-divider">
+
+<!-- 即将上映模块 -->
+<div class="container mb-8">
+    <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 g-3">
+        {% for movie in coming_soon %}
+        <div class="col">
+            <div class="booking-movie-card">
+                <div class="poster-wrap">
+                    <img src="{{ movie.poster_url }}" alt="{{ movie.title }}" loading="lazy">
+                    <div class="movie-date-badge">{{ movie.release_date_virtual }}</div>
+                </div>
+                <div class="booking-movie-info">
+                    <div class="booking-movie-title" title="{{ movie.title }}">{{ movie.title }}</div>
+                    <div class="booking-movie-genre"><i class="fas fa-tag me-1"></i>{{ movie.genre }}</div>
+                    <a href="{{ url_for('seat_selection', movie_id=movie.id) }}" class="booking-btn">
+                        <i class="fas fa-bell me-1"></i>预约购票
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="empty-search">
+                <i class="fas fa-calendar-alt"></i>
+                <h5 class="text-white">暂无即将上映的影片</h5>
+                <p>关注我们获取最新影片资讯</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block title %}圈子 - 光影推荐{% endblock %}
+
+{% block content %}
+<style>
+        .circle-card:hover {
+            box-shadow: 0 0 30px rgba(255, 159, 67, 0.8);
+            transform: scale(1.02);
+            z-index: 10;
+        }
+    </style>
+<div class="container">
+    <!-- 小论坛标题、搜索框、创建圈子按钮 -->
+    <div class="row mb-4">
+        <div class="col-lg-12">
+            <div class="d-flex align-items-center gap-4">
+                <h1 class="text-2xl font-bold" style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                    <i class="fas fa-comments" style="color: #ff9f43; font-size: 20px;"></i>
+                    <span style="background: linear-gradient(135deg, #ff9f43, #ff6b6b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: bold;">小论坛</span>
+                </h1>
+                <form action="{{ url_for('circles') }}" method="GET" class="flex-grow-1 d-flex">
+                    <input type="text" name="q" placeholder="搜索圈子..." class="form-control py-2 px-4 flex-grow-1" value="{{ search_query }}">
+                </form>
+                <a href="{{ url_for('create_circle') }}" class="btn btn-primary">
+                    <i class="fas fa-plus me-2"></i>创建圈子
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 导航链接 -->
+    <div class="row mb-10">
+        <div class="col-lg-12">
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('circles') }}" class="btn {% if filter_type == '' %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-lg d-flex align-items-center gap-2" style="padding: 8px 20px;">
+                    <i class="fas fa-th"></i>
+                    <span>全部</span>
+                </a>
+                <a href="{{ url_for('circles') }}?filter=joined" class="btn {% if filter_type == 'joined' %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-lg d-flex align-items-center gap-2" style="padding: 8px 20px;">
+                    <i class="fas fa-user-plus"></i>
+                    <span>我加入的</span>
+                </a>
+                <a href="{{ url_for('circles') }}?filter=created" class="btn {% if filter_type == 'created' %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-lg d-flex align-items-center gap-2" style="padding: 8px 20px;">
+                    <i class="fas fa-pencil"></i>
+                    <span>我创建的</span>
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 圈子列表 -->
+    <div class="row mt-8 row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
+        {% for circle in circles %}
+        <div class="col">
+            <div class="card h-100 circle-card" style="aspect-ratio: 1/1; display: flex; flex-direction: column; cursor: pointer; overflow: hidden; position: relative; transition: all 0.3s ease;" 
+ data-url="{{ url_for('circle_detail', circle_id=circle.id) }}"
+onclick="location.href=this.getAttribute('data-url')">
+                <!-- 圈子背景 -->
+                <div id="circle-background-{{ circle.id }}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0;" 
+                     data-bg-image="{{ url_for('static', filename=circle.background_image) if circle.background_image else '' }}" 
+                     data-bg-color="{{ circle.background_color or '#f0f0f0' }}"></div>
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const backgroundDiv = document.getElementById('circle-background-{{ circle.id }}');
+                        const bgImage = backgroundDiv.getAttribute('data-bg-image');
+                        const bgColor = backgroundDiv.getAttribute('data-bg-color');
+                        
+                        if (bgImage) {
+                            backgroundDiv.style.backgroundImage = 'url(' + bgImage + ')';
+                            backgroundDiv.style.backgroundSize = 'cover';
+                            backgroundDiv.style.backgroundPosition = 'center';
+                            // 添加黑色遮罩
+                            const overlay = document.createElement('div');
+                            overlay.style.position = 'absolute';
+                            overlay.style.top = '0';
+                            overlay.style.left = '0';
+                            overlay.style.width = '100%';
+                            overlay.style.height = '100%';
+                            overlay.style.backgroundColor = 'rgba(0,0,0,0.3)';
+                            overlay.style.zIndex = '1';
+                            backgroundDiv.appendChild(overlay);
+                        } else {
+                            backgroundDiv.style.backgroundColor = bgColor;
+                        }
+                    });
+                </script>
+
+                <div class="card-body d-flex flex-column position-relative z-20">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h3 class="card-title text-xs font-bold text-white">{{ circle.name }}</h3>
+                        <span class="badge bg-white text-dark rounded-full px-2 py-0.5 text-xs">
+                            {{ circle.members|length }} 成员
+                        </span>
+                    </div>
+                    <p class="card-text text-white mb-3 text-sm">{{ circle.description }}</p>
+                    <div class="d-flex justify-content-end mb-3">
+                        {% if circle.id in user_circles %}
+                        <form action="{{ url_for('leave_circle', circle_id=circle.id) }}" method="POST">
+                            <button type="submit" class="btn btn-success btn-sm" onclick="event.stopPropagation();">
+                                <i class="fas fa-check me-1"></i> 已加入
+                            </button>
+                        </form>
+                        {% else %}
+                        <form action="{{ url_for('join_circle', circle_id=circle.id) }}" method="POST">
+                            <button type="submit" class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
+                                <i class="fas fa-plus me-1"></i> 加入圈子
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <!-- 最新评论 -->
+                    <div class="mt-auto">
+                        <h5 class="text-xs font-semibold text-white mb-1">最新评论</h5>
+                        {% if circle.posts %}
+                            {% set latest_post = circle.posts|sort(attribute='created_at', reverse=True)|first %}
+                            <p class="text-xs text-white">
+                                "{{ latest_post.content[:30] }}{% if latest_post.content|length > 30 %}...{% endif %}"
+                            </p>
+                            <p class="text-xs text-white mt-1">
+                                {{ latest_post.user.username }} · {{ latest_post.created_at.strftime('%Y-%m-%d') }}
+                            </p>
+                        {% else %}
+                            <p class="text-xs text-white">暂无评论</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    {% if circles|length == 0 %}
+    <div class="text-center py-10">
+        <i class="fas fa-comments text-5xl text-muted mb-4"></i>
+        <h3 class="text-xl font-bold mb-2">暂无圈子</h3>
+        <p class="text-muted mb-4">成为第一个创建圈子的人吧！</p>
+        <a href="{{ url_for('create_circle') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>创建第一个圈子
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

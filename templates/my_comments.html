@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}我的评论 - 光影推荐{% endblock %}
+{% block content %}
+<style>
+    .page-header-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 32px;
+        margin-top: 8px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .page-header-bar h2 {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #fff;
+        margin: 0;
+    }
+
+    .comment-count-badge {
+        background: rgba(255,159,67,0.15);
+        border: 1px solid rgba(255,159,67,0.3);
+        color: var(--accent-color);
+        font-weight: 700;
+        font-size: 0.85rem;
+        padding: 5px 14px;
+        border-radius: 20px;
+    }
+
+    .comment-card {
+        border-radius: 18px;
+        overflow: hidden;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        transition: all 0.35s cubic-bezier(0.165, 0.84, 0.44, 1);
+        margin-bottom: 20px;
+    }
+
+    .comment-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+        border-color: rgba(255,159,67,0.25);
+    }
+
+    .comment-movie-info {
+        display: flex;
+        align-items: center;
+        padding: 16px;
+        background: rgba(0,0,0,0.2);
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .comment-movie-poster {
+        width: 60px;
+        height: 90px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-right: 16px;
+    }
+
+    .comment-movie-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #fff;
+        margin-bottom: 4px;
+    }
+
+    .comment-date {
+        font-size: 0.85rem;
+        color: rgba(255,255,255,0.5);
+    }
+
+    .comment-content {
+        padding: 20px;
+        color: rgba(255,255,255,0.85);
+        line-height: 1.7;
+        font-size: 0.95rem;
+    }
+
+    .comment-actions {
+        display: flex;
+        justify-content: flex-end;
+        padding: 12px 16px;
+        background: rgba(0,0,0,0.15);
+        gap: 10px;
+    }
+
+    .comment-action-btn {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .btn-view-movie {
+        background: rgba(255,159,67,0.15);
+        border: 1px solid rgba(255,159,67,0.3);
+        color: var(--accent-color);
+    }
+
+    .btn-view-movie:hover {
+        background: rgba(255,159,67,0.25);
+        border-color: rgba(255,159,67,0.5);
+        color: #fff;
+    }
+
+    .btn-delete-comment {
+        background: rgba(220,53,69,0.15);
+        border: 1px solid rgba(220,53,69,0.3);
+        color: #dc3545;
+        cursor: pointer;
+    }
+
+    .btn-delete-comment:hover {
+        background: rgba(220,53,69,0.25);
+        border-color: rgba(220,53,69,0.5);
+        color: #fff;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+    }
+
+    .empty-state-icon {
+        width: 90px; height: 90px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.04);
+        border: 2px dashed rgba(255,255,255,0.1);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 24px;
+        font-size: 2rem;
+        color: rgba(255,255,255,0.25);
+    }
+</style>
+
+<div class="page-header-bar">
+    <h2><i class="fas fa-comments me-3" style="color: var(--accent-color);"></i>我的评论</h2>
+    <span class="comment-count-badge" id="commentTotalCount">{{ comments|length }} 条评论</span>
+</div>
+
+{% if comments %}
+<div id="commentsList">
+    {% for comment in comments %}
+    <div class="comment-card" id="comment-card-{{ comment.id }}">
+        <div class="comment-movie-info">
+            <img src="{{ comment.movie.poster_url }}" class="comment-movie-poster" alt="{{ comment.movie.title }}">
+            <div>
+                <div class="comment-movie-title">{{ comment.movie.title }}</div>
+                <div class="comment-date">
+                    <i class="far fa-clock me-1"></i>{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}
+                </div>
+            </div>
+        </div>
+        <div class="comment-content">
+            {{ comment.content }}
+        </div>
+        <div class="comment-actions">
+            <a href="{{ url_for('movie_detail', movie_id=comment.movie.id) }}" class="comment-action-btn btn-view-movie">
+                <i class="fas fa-film"></i>查看电影
+            </a>
+            <button class="comment-action-btn btn-delete-comment" onclick="deleteComment('{{ comment.id }}')">
+                <i class="fas fa-trash-alt"></i>删除
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i class="far fa-comment-dots"></i></div>
+    <h4 class="text-white mb-2">暂无评论记录</h4>
+    <p class="text-muted mb-5">快去电影详情页发表你的精彩评论吧</p>
+    <a href="{{ url_for('movies') }}" class="btn btn-primary rounded-pill px-5 py-2">
+        <i class="fas fa-film me-2"></i>浏览电影
+    </a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function deleteComment(commentId) {
+    if (!confirm('确定要删除这条评论吗？')) return;
+    
+    fetch(`/delete_comment/${commentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            const card = document.getElementById(`comment-card-${commentId}`);
+            card.style.transition = 'all 0.3s ease';
+            card.style.opacity = '0';
+            card.style.transform = 'translateY(-20px)';
+            setTimeout(() => {
+                card.remove();
+                const remaining = document.querySelectorAll('#commentsList .comment-card');
+                document.getElementById('commentTotalCount').textContent = remaining.length + ' 条评论';
+                if (remaining.length === 0) location.reload();
+            }, 300);
+        } else {
+            alert('删除失败：' + data.error);
+        }
+    })
+    .catch(err => {
+        console.error('删除出错:', err);
+        alert('网络错误，请稍后重试');
+    });
+}
+</script>
+{% endblock %}
